@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+motor
+pymongo
+google-generativeai
+python-dotenv
+email-validator
+mongomock-motor
