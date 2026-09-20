@@ -37,6 +37,14 @@ export async function getEmployeeById(employeeId) {
   return response.data;
 }
 
+export async function updateEmployeeDocuments(employeeId, documentsUpdate) {
+  const response = await apiClient.patch(
+    `/onboarding/employees/${employeeId}/documents`,
+    documentsUpdate
+  );
+  return response.data;
+}
+
 // ---------------------------------------------------------------------------
 // Workflows
 // ---------------------------------------------------------------------------

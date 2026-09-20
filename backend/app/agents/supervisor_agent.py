@@ -17,6 +17,7 @@ from app.agents.base_agent import BaseAgent, AgentResult
 from app.models.task import TaskStatus
 from app.models.workflow import WorkflowStatus
 from app.db.repositories import task_repo, workflow_repo, employee_repo
+from app.services.event_broker import event_broker
 
 
 class SupervisorAgent(BaseAgent):
@@ -134,11 +135,27 @@ class SupervisorAgent(BaseAgent):
             "workflow_id": workflow_id
         }
 
+        event_broker.publish(
+            workflow_id=workflow_id,
+            event_type="WORKFLOW_STARTED",
+            message=f"Supervisor Agent initiated onboarding workflow for {employee.get('employee_name', employee_id)}.",
+            status="RUNNING",
+            data={"employee_id": employee_id, "department": employee.get("department")},
+        )
+
         max_iterations = 20  # Safety circuit breaker
         iteration = 0
 
         while iteration < max_iterations:
             iteration += 1
+
+            event_broker.publish(
+                workflow_id=workflow_id,
+                event_type="ROUND_STARTED",
+                round_num=iteration,
+                message=f"Supervisor evaluating dependency DAG round {iteration}...",
+                status="RUNNING",
+            )
 
             # --- PAUSE CHECKPOINT ---
             # Re-read workflow status from DB each iteration so that an external
@@ -146,11 +163,15 @@ class SupervisorAgent(BaseAgent):
             fresh_wf = await workflow_repo.get_workflow_by_id(workflow_id)
             if fresh_wf and fresh_wf.get("overall_status") == WorkflowStatus.PAUSED.value:
                 print(f"[Supervisor] Workflow '{workflow_id}' is PAUSED. Halting execution loop.")
+                paused_tasks = await task_repo.get_tasks_by_workflow(workflow_id)
+                paused_completed = [t for t in paused_tasks if t.get("status") == TaskStatus.COMPLETED.value]
                 return {
                     "workflow_id": workflow_id,
                     "status": WorkflowStatus.PAUSED.value,
                     "message": "Workflow paused externally. Resume to continue.",
-                    "iterations_completed": iteration - 1
+                    "rounds": iteration - 1,
+                    "completed_tasks": len(paused_completed),
+                    "total_tasks": len(paused_tasks)
                 }
 
             all_tasks = await task_repo.get_tasks_by_workflow(workflow_id)
@@ -160,6 +181,16 @@ class SupervisorAgent(BaseAgent):
             for t in newly_ready:
                 await task_repo.update_task_status(t["task_id"], TaskStatus.READY.value)
                 t["status"] = TaskStatus.READY.value
+                event_broker.publish(
+                    workflow_id=workflow_id,
+                    event_type="TASK_READY",
+                    task_id=t["task_id"],
+                    task_name=t["task_name"],
+                    agent=t.get("agent"),
+                    round_num=iteration,
+                    status="READY",
+                    message=f"Prerequisites met. Task '{t['task_name']}' unlocked and READY for {t.get('agent')}.",
+                )
 
             # Refresh list of ready tasks
             ready_tasks = [t for t in all_tasks if t.get("status") == TaskStatus.READY.value]
@@ -172,10 +203,21 @@ class SupervisorAgent(BaseAgent):
 
                 if len(completed) == len(all_tasks):
                     await workflow_repo.update_workflow_status(workflow_id, WorkflowStatus.COMPLETED.value)
+                    event_broker.publish(
+                        workflow_id=workflow_id,
+                        event_type="WORKFLOW_COMPLETED",
+                        round_num=iteration,
+                        message="All onboarding tasks completed successfully across all specialized agents.",
+                        status="COMPLETED",
+                        data={"completed_tasks": len(completed), "total_tasks": len(all_tasks)},
+                    )
                     return {
                         "workflow_id": workflow_id,
                         "status": WorkflowStatus.COMPLETED.value,
-                        "message": "All onboarding tasks completed successfully."
+                        "message": "All onboarding tasks completed successfully.",
+                        "rounds": iteration,
+                        "completed_tasks": len(completed),
+                        "total_tasks": len(all_tasks)
                     }
                 elif failed:
                     # Only declare workflow FAILED if all failed tasks have exhausted retries
@@ -189,7 +231,10 @@ class SupervisorAgent(BaseAgent):
                         return {
                             "workflow_id": workflow_id,
                             "status": WorkflowStatus.FAILED.value,
-                            "message": f"Workflow halted permanently. Tasks exhausted retries: {failed_names}"
+                            "message": f"Workflow halted permanently. Tasks exhausted retries: {failed_names}",
+                            "rounds": iteration,
+                            "completed_tasks": len(completed),
+                            "total_tasks": len(all_tasks)
                         }
                     # Some failed tasks still have retries remaining — continue the loop
                     continue
@@ -199,7 +244,10 @@ class SupervisorAgent(BaseAgent):
                     return {
                         "workflow_id": workflow_id,
                         "status": WorkflowStatus.PAUSED.value,
-                        "message": "Workflow paused; awaiting required information."
+                        "message": "Workflow paused; awaiting required information.",
+                        "rounds": iteration,
+                        "completed_tasks": len(completed),
+                        "total_tasks": len(all_tasks)
                     }
 
             # Execute all READY tasks in this round
@@ -210,6 +258,16 @@ class SupervisorAgent(BaseAgent):
 
                 # Mark task as RUNNING
                 await task_repo.update_task_status(task_id, TaskStatus.RUNNING.value, started=True)
+                event_broker.publish(
+                    workflow_id=workflow_id,
+                    event_type="AGENT_TASK_STARTED",
+                    task_id=task_id,
+                    task_name=task_name,
+                    agent=task.get("agent"),
+                    round_num=iteration,
+                    status="RUNNING",
+                    message=f"{task.get('agent')} started execution on '{task_name}'.",
+                )
 
                 if not agent:
                     # If specialized agent is not registered yet (e.g. before Phases 6-9), simulate temporary success
@@ -237,8 +295,92 @@ class SupervisorAgent(BaseAgent):
                         completed=True
                     )
                     print(f"[Supervisor] Task '{task_name}' COMPLETED.")
+                    event_broker.publish(
+                        workflow_id=workflow_id,
+                        event_type="AGENT_TASK_COMPLETED",
+                        task_id=task_id,
+                        task_name=task_name,
+                        agent=task.get("agent"),
+                        round_num=iteration,
+                        status="COMPLETED",
+                        message=f"{task.get('agent')} completed '{task_name}' successfully.",
+                        data=result.data,
+                    )
                 else:
-                    # Re-fetch fresh task doc to get accurate retry_count
+                    # Check if failure is human-resolvable (e.g. missing or unverified documents)
+                    if result.data and result.data.get("needs_human_review"):
+                        # DO NOT perform automatic retry loop. Do NOT burn retries.
+                        await task_repo.update_task_status(
+                            task_id=task_id,
+                            status=TaskStatus.PAUSED.value,
+                            error_message=result.error or "Waiting for human review",
+                            result=result.data,
+                            completed=False
+                        )
+                        pause_reason = result.data.get("reason", result.error or "Awaiting document verification")
+                        missing_docs = result.data.get("missing_documents", [])
+
+                        await workflow_repo.update_workflow_status(
+                            workflow_id=workflow_id,
+                            overall_status=WorkflowStatus.PAUSED.value,
+                            metadata_patch={
+                                "paused_reason": pause_reason,
+                                "needs_human_review": True,
+                                "missing_documents": missing_docs,
+                                "blocked_task_id": task_id,
+                                "blocked_task_name": task_name
+                            }
+                        )
+                        # Also update top-level paused_reason and paused_at
+                        collection = workflow_repo._get_collection()
+                        await collection.update_one(
+                            {"workflow_id": workflow_id},
+                            {
+                                "$set": {
+                                    "paused_at": datetime.utcnow(),
+                                    "paused_reason": pause_reason
+                                }
+                            }
+                        )
+
+                        print(f"[Supervisor] Task '{task_name}' requires human review ({pause_reason}). Halting loop and PAUSING workflow '{workflow_id}'.")
+
+                        event_broker.publish(
+                            workflow_id=workflow_id,
+                            event_type="DOCUMENT_REVIEW_REQUIRED",
+                            task_id=task_id,
+                            task_name=task_name,
+                            agent=task.get("agent"),
+                            round_num=iteration,
+                            status="PAUSED",
+                            message=f"Human review required: {result.error}",
+                            data=result.data,
+                        )
+                        event_broker.publish(
+                            workflow_id=workflow_id,
+                            event_type="WORKFLOW_PAUSED",
+                            round_num=iteration,
+                            status="PAUSED",
+                            message=f"Workflow paused. Reason: {pause_reason}",
+                            data={"paused_reason": pause_reason, "missing_documents": missing_docs, "blocked_task": task_name},
+                        )
+
+                        current_tasks = await task_repo.get_tasks_by_workflow(workflow_id)
+                        current_completed = [t for t in current_tasks if t.get("status") == TaskStatus.COMPLETED.value]
+                        return {
+                            "workflow_id": workflow_id,
+                            "status": WorkflowStatus.PAUSED.value,
+                            "message": f"Workflow paused for human document review: {result.error}",
+                            "rounds": iteration,
+                            "needs_human_review": True,
+                            "missing_documents": missing_docs,
+                            "blocked_task_id": task_id,
+                            "blocked_task_name": task_name,
+                            "completed_tasks": len(current_completed),
+                            "total_tasks": len(current_tasks)
+                        }
+
+                    # Re-fetch fresh task doc to get accurate retry_count for technical/transient failures
                     fresh_task = await task_repo.get_task_by_id(task_id)
                     retry_count = fresh_task.get("retry_count", 0)
                     max_retries = fresh_task.get("max_retries", 3)
@@ -251,6 +393,17 @@ class SupervisorAgent(BaseAgent):
                             f"[Supervisor] Task '{task_name}' FAILED (attempt {retry_count + 1}/{max_retries + 1}). "
                             f"Auto-retrying (retry #{new_count})... Error: {result.error}"
                         )
+                        event_broker.publish(
+                            workflow_id=workflow_id,
+                            event_type="TASK_RETRYING",
+                            task_id=task_id,
+                            task_name=task_name,
+                            agent=task.get("agent"),
+                            round_num=iteration,
+                            status="READY",
+                            message=f"Task '{task_name}' failed ({result.error}). Auto-retrying (attempt {new_count}/{max_retries + 1})...",
+                            data={"retry_count": new_count, "error": result.error},
+                        )
                     else:
                         # Permanently failed — exhausted all retries
                         await task_repo.update_task_status(
@@ -262,11 +415,27 @@ class SupervisorAgent(BaseAgent):
                         print(
                             f"[Supervisor] Task '{task_name}' PERMANENTLY FAILED after {retry_count + 1} attempts."
                         )
+                        event_broker.publish(
+                            workflow_id=workflow_id,
+                            event_type="TASK_FAILED",
+                            task_id=task_id,
+                            task_name=task_name,
+                            agent=task.get("agent"),
+                            round_num=iteration,
+                            status="FAILED",
+                            message=f"Task '{task_name}' permanently failed after {retry_count + 1} attempts. Error: {result.error}",
+                            data={"error": result.error},
+                        )
 
+        final_tasks = await task_repo.get_tasks_by_workflow(workflow_id)
+        final_completed = [t for t in final_tasks if t.get("status") == TaskStatus.COMPLETED.value]
         return {
             "workflow_id": workflow_id,
             "status": WorkflowStatus.RUNNING.value,
-            "message": "Max iterations reached in current pass."
+            "message": "Max iterations reached in current pass.",
+            "rounds": max_iterations,
+            "completed_tasks": len(final_completed),
+            "total_tasks": len(final_tasks)
         }
 
 

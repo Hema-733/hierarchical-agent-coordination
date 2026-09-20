@@ -7,13 +7,18 @@ Provides endpoints for:
 - Executing/Triggering the Supervisor orchestration loop
 - Pausing a RUNNING workflow
 - Resuming a PAUSED workflow
+- Real-time SSE event streaming for a workflow
 """
 
+import asyncio
+import json
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, Body, Query, HTTPException, status
+from fastapi import APIRouter, Body, Query, HTTPException, Request, status
+from sse_starlette.sse import EventSourceResponse
 from app.models.workflow import WorkflowResponse, WorkflowStatus
 from app.services import workflow_service, summary_service, gemini_service
 from app.agents.supervisor_agent import supervisor_agent
+from app.services.event_broker import event_broker
 
 router = APIRouter()
 
@@ -137,3 +142,74 @@ async def get_ai_workflow_summary(workflow_id: str) -> Dict[str, Any]:
         "progress_pct": wf_summary["progress"]["progress_pct"],
         "employee": wf_summary["employee"]
     }
+
+
+@router.get(
+    "/{workflow_id}/stream",
+    summary="Stream real-time workflow events via Server-Sent Events",
+    description=(
+        "Opens a persistent SSE connection for the given workflow. "
+        "Replays recent buffered events first (so late-joiners are not blind), "
+        "then streams all future events in real time until the workflow completes "
+        "or the client disconnects."
+    ),
+)
+async def stream_workflow_events(workflow_id: str, request: Request):
+    """
+    SSE endpoint — one connection per client per workflow.
+    Event schema (JSON-encoded in the 'data' field):
+      {
+        "id": "evt_<workflow_id>_<ts>_<seq>",
+        "workflow_id": "<id>",
+        "timestamp": "<ISO8601>",
+        "type": "WORKFLOW_STARTED | ROUND_STARTED | TASK_READY | AGENT_TASK_STARTED |
+                  AGENT_TASK_COMPLETED | TASK_FAILED | TASK_RETRYING |
+                  WORKFLOW_COMPLETED | WORKFLOW_PAUSED | WORKFLOW_RESUMED",
+        "agent": "<agent name>",
+        "task_id": "<id or null>",
+        "task_name": "<name or null>",
+        "status": "<status string>",
+        "round": <int or null>,
+        "message": "<human-readable description>",
+        "data": {}
+      }
+    """
+    # Verify the workflow exists before opening a connection
+    wf = await workflow_service.get_workflow_details(workflow_id, include_tasks=False)
+    if not wf:
+        raise HTTPException(status_code=404, detail=f"Workflow '{workflow_id}' not found.")
+
+    async def event_generator():
+        queue, history = event_broker.subscribe(workflow_id)
+        try:
+            # ── Replay buffered history so late-joining clients see past events ──
+            for past_event in history:
+                if await request.is_disconnected():
+                    return
+                yield {
+                    "event": past_event["type"],
+                    "id": past_event["id"],
+                    "data": json.dumps(past_event),
+                }
+
+            # ── Stream live events ──
+            while True:
+                if await request.is_disconnected():
+                    return
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=25.0)
+                    yield {
+                        "event": event["type"],
+                        "id": event["id"],
+                        "data": json.dumps(event),
+                    }
+                    # Stop streaming once the workflow reaches a terminal state
+                    if event["type"] in ("WORKFLOW_COMPLETED", "TASK_FAILED") and event.get("status") in ("COMPLETED", "FAILED"):
+                        return
+                except asyncio.TimeoutError:
+                    # Send a keep-alive comment to prevent proxy timeouts
+                    yield {"event": "ping", "data": json.dumps({"type": "ping"})}
+        finally:
+            event_broker.unsubscribe(workflow_id, queue)
+
+    return EventSourceResponse(event_generator())

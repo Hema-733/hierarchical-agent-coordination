@@ -58,17 +58,53 @@ async def list_employees(skip: int = 0, limit: int = 50) -> List[Dict[str, Any]]
     return await cursor.to_list(length=limit)
 
 
-async def update_employee_documents(employee_id: str, documents: Dict[str, bool]) -> Optional[Dict[str, Any]]:
+async def update_employee_documents(
+    employee_id: str,
+    documents_update: Dict[str, Any]
+) -> Optional[Dict[str, Any]]:
     """
-    Updates document status checklist for an employee.
+    Updates document status and verification records for an employee.
+    Safely merges document items and keeps legacy boolean flags in sync.
     """
     collection = _get_collection()
+    existing = await collection.find_one({"employee_id": employee_id}, {"_id": 0})
+    if not existing:
+        return None
+
+    current_docs = existing.get("documents", {})
+    # Normalize current_docs if it was a plain dict of booleans
+    for doc_key in ["id_proof", "address_proof", "bank_details", "education_certs"]:
+        if doc_key not in current_docs and f"{doc_key}_submitted" in current_docs:
+            is_sub = bool(current_docs[f"{doc_key}_submitted"])
+            current_docs[doc_key] = {
+                "submitted": is_sub,
+                "status": "SUBMITTED" if is_sub else "MISSING",
+                "document_name": f"{doc_key}.pdf"
+            }
+
+    # Apply updates
+    for k, v in documents_update.items():
+        if isinstance(v, dict) and isinstance(current_docs.get(k), dict):
+            current_docs[k].update(v)
+        else:
+            current_docs[k] = v
+
+    # Ensure boolean flags stay in sync
+    for doc_key in ["id_proof", "address_proof", "bank_details", "education_certs"]:
+        doc_obj = current_docs.get(doc_key)
+        if isinstance(doc_obj, dict):
+            is_sub = doc_obj.get("submitted", False) or doc_obj.get("status") in [
+                "SUBMITTED", "UNDER_REVIEW", "VERIFIED"
+            ]
+            current_docs[f"{doc_key}_submitted"] = is_sub
+
+    now = datetime.utcnow()
     updated = await collection.find_one_and_update(
         {"employee_id": employee_id},
         {
             "$set": {
-                "documents": documents,
-                "updated_at": datetime.utcnow()
+                "documents": current_docs,
+                "updated_at": now
             }
         },
         projection={"_id": 0},

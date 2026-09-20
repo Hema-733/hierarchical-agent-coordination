@@ -1,7 +1,7 @@
 // src/pages/WorkflowHistory.jsx — Historical audit trail of all onboarding workflows
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { getWorkflows } from "../api/client";
+import { getWorkflows, getWorkflowTasks } from "../api/client";
 import TaskStatusBadge from "../components/TaskStatusBadge";
 
 export default function WorkflowHistory() {
@@ -15,7 +15,19 @@ export default function WorkflowHistory() {
     const fetchHistory = async () => {
       try {
         const data = await getWorkflows();
-        setWorkflows(data || []);
+        const workflowsList = data || [];
+        // Fetch actual tasks for each workflow in parallel to compute accurate completed/total counts
+        const enriched = await Promise.all(
+          workflowsList.map(async (wf) => {
+            try {
+              const tasks = await getWorkflowTasks(wf.workflow_id);
+              return { ...wf, tasks: Array.isArray(tasks) ? tasks : [] };
+            } catch {
+              return { ...wf, tasks: [] };
+            }
+          })
+        );
+        setWorkflows(enriched);
       } catch (err) {
         setErrorMsg(
           err.response?.data?.detail ||
@@ -48,9 +60,7 @@ export default function WorkflowHistory() {
           <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "6px" }}>
             <span className="badge badge-primary">Audit Log</span>
           </div>
-          <h1>
-            Workflow <span className="gradient-text">Historical Records</span>
-          </h1>
+          <h1>Workflow Historical Records</h1>
           <p>
             Complete audit trail across all completed, paused, and running employee coordination lifecycles.
           </p>
@@ -113,12 +123,12 @@ export default function WorkflowHistory() {
           <p>Loading historical workflows...</p>
         </div>
       ) : filteredWorkflows.length === 0 ? (
-        <div className="glass-panel empty-workflows-panel">
+        <div className="empty-workflows-panel">
           <h3>No Historical Records</h3>
           <p>There are currently no workflows matching the selected criteria.</p>
         </div>
       ) : (
-        <div className="glass-panel" style={{ overflowX: "auto", borderRadius: "var(--radius-lg)" }}>
+        <div className="history-table-container">
           <table className="history-table">
             <thead>
               <tr>
@@ -132,13 +142,17 @@ export default function WorkflowHistory() {
             </thead>
             <tbody>
               {filteredWorkflows.map((wf) => {
-                const total = wf.tasks?.length || 6;
-                const completed = (wf.tasks || []).filter((t) => t.status === "COMPLETED").length;
+                const safeTasks = Array.isArray(wf.tasks) ? wf.tasks : [];
+                const hasTasks = safeTasks.length > 0;
+                const total = hasTasks ? safeTasks.length : null;
+                const completed = hasTasks
+                  ? safeTasks.filter((t) => t.status === "COMPLETED").length
+                  : null;
 
                 return (
                   <tr key={wf.workflow_id}>
                     <td>
-                      <span style={{ fontFamily: "var(--font-mono)", fontWeight: 600, color: "var(--primary)" }}>
+                      <span style={{ fontFamily: "var(--font-mono)", fontWeight: 600, color: "var(--accent)" }}>
                         {wf.workflow_id}
                       </span>
                     </td>
@@ -147,7 +161,7 @@ export default function WorkflowHistory() {
                       <TaskStatusBadge status={wf.overall_status} size="sm" />
                     </td>
                     <td>
-                      {completed} / {total}
+                      {hasTasks ? `${completed} / ${total}` : "—"}
                     </td>
                     <td>
                       {wf.created_at

@@ -1,9 +1,9 @@
-// src/components/Navbar.jsx — Main responsive top navigation bar with backend status ping
+// src/components/Navbar.jsx — Main responsive top navigation bar with backend status and theme toggle
 import { useState, useEffect } from "react";
 import { NavLink, Link } from "react-router-dom";
 import { checkBackendHealth } from "../api/client";
 
-export default function Navbar() {
+export default function Navbar({ theme = "light", onToggleTheme }) {
   const [isBackendHealthy, setIsBackendHealthy] = useState(null);
 
   useEffect(() => {
@@ -34,7 +34,7 @@ export default function Navbar() {
       <div className="navbar-container">
         {/* Brand Identity */}
         <Link to="/" className="brand-section">
-          <div className="brand-icon-wrapper">
+          <div className="brand-icon-wrapper" aria-hidden="true">
             <svg
               className="brand-icon"
               viewBox="0 0 24 24"
@@ -56,7 +56,7 @@ export default function Navbar() {
         </Link>
 
         {/* Navigation Links */}
-        <nav>
+        <nav aria-label="Main Navigation">
           <ul className="nav-links">
             <li>
               <NavLink
@@ -66,14 +66,15 @@ export default function Navbar() {
                 }
               >
                 <svg
-                  width="16"
-                  height="16"
+                  width="15"
+                  height="15"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
                   strokeWidth="2"
                   strokeLinecap="round"
                   strokeLinejoin="round"
+                  aria-hidden="true"
                 >
                   <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
                   <circle cx="8.5" cy="7" r="4" />
@@ -92,14 +93,15 @@ export default function Navbar() {
                 }
               >
                 <svg
-                  width="16"
-                  height="16"
+                  width="15"
+                  height="15"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
                   strokeWidth="2"
                   strokeLinecap="round"
                   strokeLinejoin="round"
+                  aria-hidden="true"
                 >
                   <rect x="3" y="3" width="7" height="7" />
                   <rect x="14" y="3" width="7" height="7" />
@@ -117,14 +119,15 @@ export default function Navbar() {
                 }
               >
                 <svg
-                  width="16"
-                  height="16"
+                  width="15"
+                  height="15"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
                   strokeWidth="2"
                   strokeLinecap="round"
                   strokeLinejoin="round"
+                  aria-hidden="true"
                 >
                   <circle cx="12" cy="12" r="10" />
                   <polyline points="12 6 12 12 16 14" />
@@ -135,40 +138,87 @@ export default function Navbar() {
           </ul>
         </nav>
 
-        {/* Backend Connectivity Status Badge */}
+        {/* Status Badge & Theme Toggle */}
         <div className="nav-status">
           <div className="health-badge" title="FastAPI Backend Health Status">
             {isBackendHealthy === null ? (
               <>
                 <span
                   style={{
-                    width: 8,
-                    height: 8,
+                    width: 7,
+                    height: 7,
                     borderRadius: "50%",
-                    background: "#94a3b8",
+                    backgroundColor: "var(--text-muted)",
                   }}
                 />
-                <span>Checking API...</span>
+                <span>Connecting...</span>
               </>
             ) : isBackendHealthy ? (
               <>
                 <span className="pulse-active" />
-                <span style={{ color: "#34d399" }}>API Online</span>
+                <span>API Online</span>
               </>
             ) : (
               <>
                 <span
                   style={{
-                    width: 8,
-                    height: 8,
+                    width: 7,
+                    height: 7,
                     borderRadius: "50%",
-                    background: "#f59e0b",
+                    backgroundColor: "var(--status-warning)",
                   }}
                 />
-                <span style={{ color: "#fbbf24" }}>API Standby</span>
+                <span>API Standby</span>
               </>
             )}
           </div>
+
+          {/* Theme Toggle Button */}
+          <button
+            type="button"
+            className="theme-toggle-btn"
+            onClick={onToggleTheme}
+            aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+            title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+          >
+            {theme === "dark" ? (
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <circle cx="12" cy="12" r="5" />
+                <line x1="12" y1="1" x2="12" y2="3" />
+                <line x1="12" y1="21" x2="12" y2="23" />
+                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+                <line x1="1" y1="12" x2="3" y2="12" />
+                <line x1="21" y1="12" x2="23" y2="12" />
+                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+              </svg>
+            ) : (
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+              </svg>
+            )}
+          </button>
         </div>
       </div>
     </header>

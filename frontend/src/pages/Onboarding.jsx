@@ -5,27 +5,27 @@ const PIPELINE_AGENTS = [
   {
     role: "SUP",
     name: "Supervisor Agent",
-    desc: "Dynamically constructs the execution DAG, resolves prerequisite dependencies, and enforces retry policies.",
+    desc: "Decomposes onboarding goal, evaluates dependency DAG, and coordinates execution.",
   },
   {
     role: "HR",
     name: "HR Specialist Agent",
-    desc: "Validates document verification compliance, company policies, and generates official offer confirmations.",
+    desc: "Performs background checks and verifies essential employee documentation.",
   },
   {
     role: "IT",
     name: "IT Infrastructure Agent",
-    desc: "Provisions enterprise email accounts, SSO credentials, and hardware asset requisitions.",
+    desc: "Provisions corporate email, SSO credentials, and hardware requisition.",
   },
   {
     role: "FIN",
     name: "Finance & Payroll Agent",
-    desc: "Configures payroll compensation profiles, tax brackets, and initial benefits enrollment.",
+    desc: "Validates bank details, tax withholding, and enrolls in payroll processing.",
   },
   {
     role: "RES",
     name: "Resource Agent",
-    desc: "Assigns physical/remote workstation assets, team badge access, and welcome swags.",
+    desc: "Allocates workstation assets, desk reservation, and security badges.",
   },
 ];
 
@@ -34,14 +34,9 @@ export default function Onboarding() {
     <div className="onboarding-page">
       {/* Page Header */}
       <div className="onboarding-page-header">
-        <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
-          <span className="badge badge-primary">Phase 15 • Orchestration Engine</span>
-        </div>
-        <h1>
-          Employee <span className="gradient-text">Onboarding Coordination</span>
-        </h1>
+        <h1>Employee Onboarding</h1>
         <p>
-          Register a new team member to trigger the hierarchical autonomous multi-agent pipeline. 
+          Register a new team member to initiate the hierarchical multi-agent coordination pipeline.
           The Supervisor Agent automatically orchestrates tasks across specialized agents with real-time dependency tracking.
         </p>
       </div>
@@ -53,36 +48,41 @@ export default function Onboarding() {
         </main>
 
         <aside>
-          <div className="glass-panel sidebar-pipeline-card">
-            <h3 style={{ marginBottom: "1rem", fontSize: "1.1rem" }}>
-              Coordinated Agent Pipeline
-            </h3>
-            <p style={{ fontSize: "0.825rem", marginBottom: "1.5rem" }}>
-              Upon submission, the Supervisor Agent evaluates dependencies and tasks are distributed:
+          <div className="sidebar-pipeline-card">
+            <h3>Agent Pipeline Guide</h3>
+            <p>
+              Autonomous execution flow triggered upon submission:
             </p>
 
-            <div className="pipeline-steps-list">
+            <div className="pipeline-flow-diagram">
               {PIPELINE_AGENTS.map((agent, i) => (
-                <div key={i} className="pipeline-step-item">
-                  <div className="step-agent-icon">{agent.role}</div>
-                  <div className="step-details">
-                    <div className="step-agent-title">{agent.name}</div>
-                    <div className="step-agent-desc">{agent.desc}</div>
+                <div key={agent.role}>
+                  <div className="pipeline-node">
+                    <span className="pipeline-node-role">{agent.role}</span>
+                    <div className="pipeline-node-info">
+                      <div className="pipeline-node-name">{agent.name}</div>
+                      <div className="pipeline-node-desc">{agent.desc}</div>
+                    </div>
                   </div>
+                  {i < PIPELINE_AGENTS.length - 1 && (
+                    <div className="pipeline-connector" aria-hidden="true">
+                      ↓
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
 
             <div
               style={{
-                marginTop: "1.5rem",
+                marginTop: "1.25rem",
                 paddingTop: "1rem",
-                borderTop: "1px solid var(--border-subtle)",
-                fontSize: "0.775rem",
+                borderTop: "1px solid var(--border)",
+                fontSize: "0.75rem",
                 color: "var(--text-muted)",
               }}
             >
-              ⚡ Powered by Google Gemini AI &amp; FastAPI Async Coordination
+              Deterministic state machine with automated error handling &amp; retry policies
             </div>
           </div>
         </aside>

@@ -97,11 +97,31 @@ async def retry_task(task_id: str) -> TaskResponse:
             detail=f"Task '{task_id}' not found."
         )
 
-    if task["status"] != TaskStatus.FAILED.value:
+    allowed_statuses = {TaskStatus.FAILED.value, TaskStatus.PAUSED.value}
+    if task["status"] not in allowed_statuses:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Only FAILED tasks can be retried. Current status is {task['status']}."
+            detail=f"Only FAILED or PAUSED tasks can be retried. Current status is {task['status']}."
         )
+
+    if task["status"] == TaskStatus.PAUSED.value:
+        # Human-resolvable unblock: reset to READY with fresh retry budget
+        collection = task_repo._get_collection()
+        from datetime import datetime
+        updated = await collection.find_one_and_update(
+            {"task_id": task_id},
+            {
+                "$set": {
+                    "status": TaskStatus.READY.value,
+                    "retry_count": 0,
+                    "error_message": None,
+                    "updated_at": datetime.utcnow()
+                }
+            },
+            projection={"_id": 0},
+            return_document=True
+        )
+        return TaskResponse(**updated)
 
     if task["retry_count"] >= task.get("max_retries", 3):
         raise HTTPException(

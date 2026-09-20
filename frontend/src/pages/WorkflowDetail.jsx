@@ -8,20 +8,29 @@ import {
   resumeWorkflow,
   retryTask,
   getAIWorkflowSummary,
+  getEmployeeById,
+  updateEmployeeDocuments,
 } from "../api/client";
+import { useWorkflowStream } from "../api/useWorkflowStream";
 import TaskStatusBadge from "../components/TaskStatusBadge";
 import AgentActivityLog from "../components/AgentActivityLog";
+import WorkflowDAG from "../components/WorkflowDAG";
+import DocumentReviewPanel from "../components/DocumentReviewPanel";
 
 export default function WorkflowDetail() {
   const { id: workflowId } = useParams();
 
   const [workflow, setWorkflow] = useState(null);
+  const [employee, setEmployee] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [aiSummary, setAiSummary] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
-  const [activeTab, setActiveTab] = useState("TASKS"); // 'TASKS' or 'LOGS'
+  const [activeTab, setActiveTab] = useState("TASKS"); // 'TASKS', 'DOCUMENTS', or 'LOGS'
+
+  // ── Real-time SSE stream ──
+  const { events: sseEvents, connectionStatus } = useWorkflowStream(workflowId, !!workflowId);
 
   const loadWorkflowData = useCallback(async () => {
     try {
@@ -29,6 +38,15 @@ export default function WorkflowDetail() {
       setWorkflow(wf);
       setTasks(wf.tasks || []);
       setErrorMsg(null);
+
+      if (wf.employee_id) {
+        try {
+          const emp = await getEmployeeById(wf.employee_id);
+          setEmployee(emp);
+        } catch {
+          // Ignore employee fetch error if not yet created
+        }
+      }
     } catch (err) {
       setErrorMsg(
         err.response?.data?.detail ||
@@ -51,6 +69,22 @@ export default function WorkflowDetail() {
 
   useEffect(() => {
     let isSubscribed = true;
+    let hasLoadedAi = false;
+
+    // Fetch AI summary once, when the workflow is in a terminal state
+    const fetchAiIfTerminal = async (status) => {
+      if (hasLoadedAi) return;
+      if (status !== "COMPLETED" && status !== "FAILED") return;
+      try {
+        const aiData = await getAIWorkflowSummary(workflowId);
+        if (isSubscribed) {
+          setAiSummary(aiData);
+          hasLoadedAi = true;
+        }
+      } catch {
+        // Gracefully continue without AI summary
+      }
+    };
 
     const fetchAll = async () => {
       try {
@@ -59,6 +93,18 @@ export default function WorkflowDetail() {
           setWorkflow(wf);
           setTasks(wf.tasks || []);
           setErrorMsg(null);
+
+          if (wf.employee_id) {
+            try {
+              const emp = await getEmployeeById(wf.employee_id);
+              if (isSubscribed) setEmployee(emp);
+            } catch {
+              // Ignore
+            }
+          }
+
+          // Fetch AI summary once when workflow reaches a terminal state
+          await fetchAiIfTerminal(wf.overall_status);
         }
       } catch (err) {
         if (isSubscribed) {
@@ -73,20 +119,10 @@ export default function WorkflowDetail() {
           setIsLoading(false);
         }
       }
-
-      try {
-        const aiData = await getAIWorkflowSummary(workflowId);
-        if (isSubscribed) {
-          setAiSummary(aiData);
-        }
-      } catch {
-        // AI narrative fallback
-      }
     };
 
     fetchAll();
-
-    const interval = setInterval(fetchAll, 4000);
+    const interval = setInterval(fetchAll, 3500);
     return () => {
       isSubscribed = false;
       clearInterval(interval);
@@ -135,10 +171,34 @@ export default function WorkflowDetail() {
   const handleRetryTask = async (taskId) => {
     setActionLoading(true);
     try {
+      // Re-queue the failed/paused task as READY
       await retryTask(taskId);
+      // Automatically re-trigger the Supervisor so it picks up the re-queued task
+      await executeWorkflow(workflowId);
       await loadWorkflowData();
+      await loadAiNarrative();
     } catch (err) {
       setErrorMsg(err.response?.data?.detail || "Failed to retry task.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleUpdateDocument = async (docKey, patchData, autoResume = true) => {
+    if (!workflow?.employee_id) return;
+    setActionLoading(true);
+    try {
+      const payload = {
+        [docKey]: patchData,
+        workflow_id: workflowId,
+        auto_resume: autoResume,
+      };
+      const updatedEmp = await updateEmployeeDocuments(workflow.employee_id, payload);
+      setEmployee(updatedEmp);
+      await loadWorkflowData();
+      await loadAiNarrative();
+    } catch (err) {
+      setErrorMsg(err.response?.data?.detail || "Failed to update document status.");
     } finally {
       setActionLoading(false);
     }
@@ -155,6 +215,15 @@ export default function WorkflowDetail() {
 
   const completedCount = tasks.filter((t) => t.status === "COMPLETED").length;
   const progressPct = tasks.length > 0 ? Math.round((completedCount / tasks.length) * 100) : 0;
+
+  // Document review status summary
+  const docs = employee?.documents || {};
+  const docList = Object.values(docs);
+  const pendingReviewCount = docList.filter(
+    (d) => d && (d.status === "MISSING" || d.status === "REJECTED" || d.status === "UNDER_REVIEW")
+  ).length;
+
+  const isWorkflowPaused = workflow?.overall_status === "PAUSED";
 
   return (
     <div className="workflow-detail-page">
@@ -182,13 +251,49 @@ export default function WorkflowDetail() {
         </div>
       )}
 
+      {/* Human-in-the-Loop Action Required Banner */}
+      {isWorkflowPaused && (
+        <div className="hitl-action-banner">
+          <div className="hitl-action-left">
+            <svg className="hitl-action-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+              <line x1="12" y1="9" x2="12" y2="13" />
+              <line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+            <div>
+              <div className="hitl-action-title">Action Required: Human-in-the-Loop Review Needed</div>
+              <div className="hitl-action-desc">
+                {workflow?.paused_reason || workflow?.error_message || "Workflow coordination is paused awaiting manual document verification or review."}
+              </div>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className="btn btn-sm btn-primary"
+              onClick={() => setActiveTab("DOCUMENTS")}
+            >
+              Review Documents
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm btn-secondary"
+              onClick={handleResume}
+              disabled={actionLoading}
+            >
+              {actionLoading ? "Resuming..." : "Resume Pipeline"}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Main Workflow Header Card */}
-      <div className="glass-panel detail-header-panel">
+      <div className="detail-header-panel">
         <div className="detail-header-top">
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "6px" }}>
               <TaskStatusBadge status={workflow?.overall_status} />
-              <span className="badge badge-primary">DAG Pipeline</span>
+              <span className="badge badge-neutral">Pipeline</span>
             </div>
             <h1>{workflowId}</h1>
             <div className="detail-meta-text">
@@ -263,18 +368,22 @@ export default function WorkflowDetail() {
 
       {/* AI Narrative Executive Summary Card */}
       {(aiSummary?.ai_summary || aiSummary?.summary) && (
-        <div className="glass-panel ai-summary-card">
+        <div className="card ai-summary-card">
           <div className="ai-summary-badge">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="16" y1="13" x2="8" y2="13" />
+              <line x1="16" y1="17" x2="8" y2="17" />
+              <polyline points="10 9 9 9 8 9" />
             </svg>
-            <span>Gemini AI Executive Narrative</span>
+            <span>Executive Status Summary</span>
           </div>
           <p className="ai-summary-text">{aiSummary.ai_summary || aiSummary.summary}</p>
         </div>
       )}
 
-      {/* Detail Tabs: DAG Task Execution vs Agent Activity Log */}
+      {/* Detail Tabs: DAG vs Documents vs Activity Log */}
       <div className="detail-tabs-bar">
         <button
           type="button"
@@ -285,82 +394,74 @@ export default function WorkflowDetail() {
         </button>
         <button
           type="button"
+          className={`detail-tab ${activeTab === "DOCUMENTS" ? "active" : ""}`}
+          onClick={() => setActiveTab("DOCUMENTS")}
+        >
+          Candidate Documents (4)
+          {pendingReviewCount > 0 && (
+            <span
+              style={{
+                marginLeft: "6px",
+                background: isWorkflowPaused ? "var(--status-warning)" : "var(--status-neutral)",
+                color: "#fff",
+                borderRadius: "99px",
+                fontSize: "0.65rem",
+                fontWeight: 700,
+                padding: "1px 6px",
+              }}
+            >
+              {pendingReviewCount} pending
+            </span>
+          )}
+        </button>
+        <button
+          type="button"
           className={`detail-tab ${activeTab === "LOGS" ? "active" : ""}`}
           onClick={() => setActiveTab("LOGS")}
         >
           Agent Live Audit Trail
+          {sseEvents.length > 0 && (
+            <span
+              style={{
+                marginLeft: "6px",
+                background: "var(--accent)",
+                color: "#fff",
+                borderRadius: "99px",
+                fontSize: "0.65rem",
+                fontWeight: 700,
+                padding: "1px 6px",
+              }}
+            >
+              {sseEvents.length}
+            </span>
+          )}
         </button>
       </div>
 
-      {/* Tab 1: Task Execution DAG Tree */}
+      {/* Tab 1: Interactive Visual DAG */}
       {activeTab === "TASKS" && (
-        <div className="task-tree-container">
-          {tasks.map((task, index) => (
-            <div key={task.task_id} className="glass-panel task-node-card">
-              <div className="task-node-header">
-                <div className="task-node-index">{index + 1}</div>
-                <div className="task-node-title-group">
-                  <h3>{task.task_name}</h3>
-                  <div className="task-node-agent">
-                    Assigned Agent: <strong>{task.agent}</strong>
-                  </div>
-                </div>
-
-                <div className="task-node-status">
-                  {task.retry_count > 0 && (
-                    <span className="badge badge-warning" style={{ fontSize: "0.75rem" }}>
-                      Retry {task.retry_count}/{task.max_retries}
-                    </span>
-                  )}
-                  <TaskStatusBadge status={task.status} />
-                  {task.status === "FAILED" && (
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      onClick={() => handleRetryTask(task.task_id)}
-                      disabled={actionLoading}
-                    >
-                      Retry
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Task Dependencies */}
-              {task.dependencies && task.dependencies.length > 0 && (
-                <div className="task-deps-row">
-                  <span className="deps-label">Prerequisites:</span>
-                  {task.dependencies.map((dep, dIdx) => (
-                    <span key={dIdx} className="dep-pill">
-                      {dep}
-                    </span>
-                  ))}
-                </div>
-              )}
-
-              {/* Error Message banner if failed */}
-              {task.error_message && (
-                <div className="task-error-text">
-                  <strong>Failure: </strong> {task.error_message}
-                </div>
-              )}
-
-              {/* Task Output Data if completed */}
-              {task.result && (
-                <div className="task-result-box">
-                  <div className="payload-label">Task Artifact Data:</div>
-                  <pre className="json-pre">{JSON.stringify(task.result, null, 2)}</pre>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
+        <WorkflowDAG
+          tasks={tasks}
+          sseEvents={sseEvents}
+          onRetryTask={handleRetryTask}
+          actionLoading={actionLoading}
+        />
       )}
 
-      {/* Tab 2: Embedded Agent Activity Log */}
+      {/* Tab 2: Human-in-the-Loop Document Verification Panel */}
+      {activeTab === "DOCUMENTS" && (
+        <DocumentReviewPanel
+          employee={employee}
+          workflow={workflow}
+          onUpdateDocument={handleUpdateDocument}
+          actionLoading={actionLoading}
+        />
+      )}
+
+      {/* Tab 3: Real-time SSE Agent Activity Log */}
       {activeTab === "LOGS" && (
         <div style={{ marginTop: "1rem" }}>
-          <AgentActivityLog tasks={tasks} />
+          <AgentActivityLog events={sseEvents} connectionStatus={connectionStatus} />
         </div>
       )}
     </div>

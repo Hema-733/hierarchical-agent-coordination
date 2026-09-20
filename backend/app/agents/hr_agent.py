@@ -73,28 +73,32 @@ class HRAgent(BaseAgent):
 
     async def _verify_documents(self, task: Dict[str, Any], context: Dict[str, Any]) -> AgentResult:
         """
-        Inspects submitted document checklist.
-        Mandatory documents: id_proof_submitted, address_proof_submitted.
+        Inspects submitted document records for identity and address verification.
+        Uses centralized document requirements and flags human review if deficient.
         """
+        from app.services.document_service import validate_task_document_requirements
+
         employee = context.get("employee", {})
         emp_id = employee.get("employee_id")
         docs = employee.get("documents", {})
 
-        missing_docs: List[str] = []
-        if not docs.get("id_proof_submitted"):
-            missing_docs.append("National ID / Passport Proof")
-        if not docs.get("address_proof_submitted"):
-            missing_docs.append("Permanent Address Proof")
+        is_valid, deficient_docs, error_msg = validate_task_document_requirements("Document Verification", docs)
 
-        if missing_docs:
+        if not is_valid:
+            missing_keys = [d["key"] for d in deficient_docs]
+            missing_labels = [d["label"] for d in deficient_docs]
             return AgentResult(
                 success=False,
-                error=f"Document verification failed. Missing required documents: {', '.join(missing_docs)}",
+                error=error_msg or f"Document verification failed. Missing required documents: {', '.join(missing_labels)}",
                 data={
+                    "needs_human_review": True,
                     "compliance_status": "INCOMPLETE",
                     "employee_id": emp_id,
-                    "missing_documents": missing_docs,
-                    "action_required": "Please upload missing identification documents."
+                    "missing_documents": missing_keys,
+                    "missing_document_labels": missing_labels,
+                    "deficient_details": deficient_docs,
+                    "reason": error_msg or f"Required documents ({', '.join(missing_labels)}) need verification.",
+                    "action_required": "Please review or upload the required identity and address documents."
                 },
                 metadata={"agent": self.name, "handler": "verify_documents"}
             )
@@ -109,8 +113,8 @@ class HRAgent(BaseAgent):
                 "verified_documents": [
                     "National ID / Passport Proof",
                     "Permanent Address Proof",
-                    "Educational Certificates" if docs.get("education_certs_submitted") else None,
-                    "Bank Account Details" if docs.get("bank_details_submitted") else None
+                    "Educational Certificates" if docs.get("education_certs_submitted") or (isinstance(docs.get("education_certs"), dict) and docs["education_certs"].get("submitted")) else None,
+                    "Bank Account Details" if docs.get("bank_details_submitted") or (isinstance(docs.get("bank_details"), dict) and docs["bank_details"].get("submitted")) else None
                 ],
                 "verified_at": datetime.utcnow().isoformat()
             },

@@ -1,4 +1,4 @@
-// src/components/OnboardingForm.jsx — Employee Onboarding initiation form with quick autofill & API integration
+// src/components/OnboardingForm.jsx — Minimalist Enterprise Onboarding Initiation Form
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { submitOnboarding } from "../api/client";
@@ -51,7 +51,7 @@ const PRESETS = [
       documents: {
         id_proof_submitted: true,
         address_proof_submitted: true,
-        bank_details_submitted: false, // demonstrates paused/warning scenario
+        bank_details_submitted: false, // Demonstrates paused/retry workflow
         education_certs_submitted: true,
       },
     },
@@ -78,6 +78,13 @@ export default function OnboardingForm() {
         [key]: !prev.documents[key],
       },
     }));
+  };
+
+  const handleKeyDown = (e, key) => {
+    if (e.key === " " || e.key === "Enter") {
+      e.preventDefault();
+      handleDocToggle(key);
+    }
   };
 
   const applyPreset = (preset) => {
@@ -129,11 +136,11 @@ export default function OnboardingForm() {
   if (successResponse) {
     const { employee, workflow } = successResponse;
     return (
-      <div className="glass-panel form-card success-card">
-        <div className="success-icon-badge">
+      <div className="card form-card success-card">
+        <div className="success-icon-badge" aria-hidden="true">
           <svg
-            width="32"
-            height="32"
+            width="22"
+            height="22"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -145,9 +152,9 @@ export default function OnboardingForm() {
           </svg>
         </div>
 
-        <h2>Onboarding Initiated Successfully!</h2>
+        <h2>Onboarding Initiated</h2>
         <p>
-          The Supervisor Agent has orchestrated 6 dependency-aware tasks across HR, IT, Finance, and Resource Agents.
+          The Supervisor Agent has orchestrated tasks across HR, IT, Finance, and Resource Agents.
         </p>
 
         <div className="success-meta-grid">
@@ -166,31 +173,18 @@ export default function OnboardingForm() {
           <div className="meta-box">
             <div className="meta-label">Initial Status</div>
             <div className="meta-val">
-              <span className="badge badge-primary">{workflow.status}</span>
+              <span className="badge badge-primary">{workflow.overall_status || workflow.status}</span>
             </div>
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: "12px", marginTop: "1rem", flexWrap: "wrap", justifyContent: "center" }}>
+        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", justifyContent: "center" }}>
           <button
             type="button"
             className="btn btn-primary"
             onClick={() => navigate(`/workflows/${workflow.workflow_id}`)}
           >
             Track Workflow Execution
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <line x1="5" y1="12" x2="19" y2="12" />
-              <polyline points="12 5 19 12 12 19" />
-            </svg>
           </button>
           <button
             type="button"
@@ -205,13 +199,13 @@ export default function OnboardingForm() {
   }
 
   return (
-    <div className="glass-panel form-card">
-      {/* Header bar with autofill presets */}
+    <div className="form-card">
+      {/* Header bar with quick-fill presets */}
       <div className="form-header-bar">
         <div>
-          <h2>Employee Registration Details</h2>
-          <p style={{ fontSize: "0.85rem", marginTop: 4 }}>
-            Submit employee data to trigger automated hierarchical coordination.
+          <h2>Employee Registration</h2>
+          <p>
+            Enter new hire credentials to instantiate the autonomous workflow pipeline.
           </p>
         </div>
         <div className="quick-fill-group">
@@ -220,7 +214,7 @@ export default function OnboardingForm() {
             <button
               key={idx}
               type="button"
-              className="btn btn-secondary btn-sm"
+              className="quick-fill-btn"
               onClick={() => applyPreset(preset)}
               disabled={isLoading}
             >
@@ -231,14 +225,15 @@ export default function OnboardingForm() {
       </div>
 
       {errorMsg && (
-        <div className="alert-box alert-danger">
+        <div className="alert-box alert-danger" role="alert">
           <svg
-            width="18"
-            height="18"
+            width="16"
+            height="16"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
             strokeWidth="2"
+            aria-hidden="true"
           >
             <circle cx="12" cy="12" r="10" />
             <line x1="12" y1="8" x2="12" y2="12" />
@@ -248,241 +243,266 @@ export default function OnboardingForm() {
         </div>
       )}
 
-      <form onSubmit={handleSubmit}>
-        {/* Section 1: Personal & Contact */}
-        <div className="form-section-title">Personal & Contact Info</div>
-        <div className="form-row">
-          <div className="form-group">
-            <label className="form-label" htmlFor="employee_name">
-              Full Legal Name <span className="required">*</span>
-            </label>
-            <input
-              id="employee_name"
-              name="employee_name"
-              type="text"
-              required
-              className="form-input"
-              placeholder="e.g. Eleanor Vance"
-              value={formData.employee_name}
-              onChange={handleInputChange}
-              disabled={isLoading}
-            />
+      <form onSubmit={handleSubmit} noValidate>
+        {/* Section 1: Personal Information */}
+        <div className="form-section">
+          <div className="form-section-title">
+            <span>1. Personal Information</span>
           </div>
-          <div className="form-group">
-            <label className="form-label" htmlFor="email">
-              Corporate Email <span className="required">*</span>
-            </label>
-            <input
-              id="email"
-              name="email"
-              type="email"
-              required
-              className="form-input"
-              placeholder="e.vance@techcorp.io"
-              value={formData.email}
-              onChange={handleInputChange}
-              disabled={isLoading}
-            />
+
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label" htmlFor="employee_name">
+                Full Legal Name <span className="required">*</span>
+              </label>
+              <input
+                id="employee_name"
+                name="employee_name"
+                type="text"
+                required
+                className="form-input"
+                placeholder="e.g. Eleanor Vance"
+                value={formData.employee_name}
+                onChange={handleInputChange}
+                disabled={isLoading}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="email">
+                Corporate Email <span className="required">*</span>
+              </label>
+              <input
+                id="email"
+                name="email"
+                type="email"
+                required
+                className="form-input"
+                placeholder="e.vance@techcorp.io"
+                value={formData.email}
+                onChange={handleInputChange}
+                disabled={isLoading}
+              />
+            </div>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label" htmlFor="phone">
+                Phone Number <span className="required">*</span>
+              </label>
+              <input
+                id="phone"
+                name="phone"
+                type="tel"
+                required
+                className="form-input"
+                placeholder="+1-555-010-9988"
+                value={formData.phone}
+                onChange={handleInputChange}
+                disabled={isLoading}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="joining_date">
+                Joining Date <span className="required">*</span>
+              </label>
+              <input
+                id="joining_date"
+                name="joining_date"
+                type="date"
+                required
+                className="form-input"
+                value={formData.joining_date}
+                onChange={handleInputChange}
+                disabled={isLoading}
+              />
+            </div>
           </div>
         </div>
 
-        <div className="form-row">
-          <div className="form-group">
-            <label className="form-label" htmlFor="phone">
-              Phone Number <span className="required">*</span>
-            </label>
-            <input
-              id="phone"
-              name="phone"
-              type="tel"
-              required
-              className="form-input"
-              placeholder="+1-555-010-9988"
-              value={formData.phone}
-              onChange={handleInputChange}
-              disabled={isLoading}
-            />
+        {/* Section 2: Role Placement */}
+        <div className="form-section">
+          <div className="form-section-title">
+            <span>2. Role Placement</span>
           </div>
-          <div className="form-group">
-            <label className="form-label" htmlFor="joining_date">
-              Joining Date <span className="required">*</span>
-            </label>
-            <input
-              id="joining_date"
-              name="joining_date"
-              type="date"
-              required
-              className="form-input"
-              value={formData.joining_date}
-              onChange={handleInputChange}
-              disabled={isLoading}
-            />
-          </div>
-        </div>
 
-        {/* Section 2: Role & Hierarchy */}
-        <div className="form-section-title">Department & Role Placement</div>
-        <div className="form-row">
-          <div className="form-group">
-            <label className="form-label" htmlFor="department">
-              Department <span className="required">*</span>
-            </label>
-            <select
-              id="department"
-              name="department"
-              className="form-select"
-              value={formData.department}
-              onChange={handleInputChange}
-              disabled={isLoading}
-            >
-              <option value="Engineering">Engineering</option>
-              <option value="Finance">Finance</option>
-              <option value="Human Resources">Human Resources</option>
-              <option value="Information Technology">Information Technology</option>
-              <option value="Product & Design">Product & Design</option>
-              <option value="Sales & Marketing">Sales & Marketing</option>
-            </select>
-          </div>
-          <div className="form-group">
-            <label className="form-label" htmlFor="designation">
-              Designation / Job Title <span className="required">*</span>
-            </label>
-            <input
-              id="designation"
-              name="designation"
-              type="text"
-              required
-              className="form-input"
-              placeholder="e.g. Senior Backend Engineer"
-              value={formData.designation}
-              onChange={handleInputChange}
-              disabled={isLoading}
-            />
-          </div>
-        </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label" htmlFor="department">
+                Department <span className="required">*</span>
+              </label>
+              <select
+                id="department"
+                name="department"
+                className="form-select"
+                value={formData.department}
+                onChange={handleInputChange}
+                disabled={isLoading}
+              >
+                <option value="Engineering">Engineering</option>
+                <option value="Finance">Finance</option>
+                <option value="Human Resources">Human Resources</option>
+                <option value="Information Technology">Information Technology</option>
+                <option value="Product & Design">Product & Design</option>
+                <option value="Sales & Marketing">Sales & Marketing</option>
+              </select>
+            </div>
 
-        <div className="form-row">
-          <div className="form-group" style={{ gridColumn: "1 / -1" }}>
-            <label className="form-label" htmlFor="manager">
-              Reporting Manager <span className="required">*</span>
-            </label>
-            <input
-              id="manager"
-              name="manager"
-              type="text"
-              required
-              className="form-input"
-              placeholder="e.g. Marcus Vance (Director of Engineering)"
-              value={formData.manager}
-              onChange={handleInputChange}
-              disabled={isLoading}
-            />
+            <div className="form-group">
+              <label className="form-label" htmlFor="designation">
+                Designation / Job Title <span className="required">*</span>
+              </label>
+              <input
+                id="designation"
+                name="designation"
+                type="text"
+                required
+                className="form-input"
+                placeholder="e.g. Senior Backend Engineer"
+                value={formData.designation}
+                onChange={handleInputChange}
+                disabled={isLoading}
+              />
+            </div>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group" style={{ gridColumn: "1 / -1" }}>
+              <label className="form-label" htmlFor="manager">
+                Reporting Manager <span className="required">*</span>
+              </label>
+              <input
+                id="manager"
+                name="manager"
+                type="text"
+                required
+                className="form-input"
+                placeholder="e.g. Marcus Vance (Director of Engineering)"
+                value={formData.manager}
+                onChange={handleInputChange}
+                disabled={isLoading}
+              />
+            </div>
           </div>
         </div>
 
         {/* Section 3: Document Verification Checklist */}
-        <div className="form-section-title">
-          Submitted Documents Checklist
-          <span style={{ fontSize: "0.75rem", textTransform: "none", color: "var(--text-muted)", fontWeight: 400 }}>
-            (Checked documents simulate pre-verified attachments)
-          </span>
+        <div className="form-section">
+          <div className="form-section-title">
+            <span>3. Document Verification</span>
+            <span className="form-section-subtext">
+              Select verified or provided attachments
+            </span>
+          </div>
+
+          <div className="doc-checklist-grid">
+            <div
+              className={`doc-toggle-card ${formData.documents.id_proof_submitted ? "checked" : ""}`}
+              onClick={() => handleDocToggle("id_proof_submitted")}
+              onKeyDown={(e) => handleKeyDown(e, "id_proof_submitted")}
+              role="checkbox"
+              aria-checked={formData.documents.id_proof_submitted}
+              tabIndex={0}
+            >
+              <input
+                type="checkbox"
+                className="doc-checkbox"
+                checked={formData.documents.id_proof_submitted}
+                onChange={() => {}}
+                tabIndex={-1}
+                aria-hidden="true"
+              />
+              <div>
+                <div className="doc-title">National ID / Passport</div>
+                <div className="doc-desc">Government-issued identity verification</div>
+              </div>
+            </div>
+
+            <div
+              className={`doc-toggle-card ${formData.documents.address_proof_submitted ? "checked" : ""}`}
+              onClick={() => handleDocToggle("address_proof_submitted")}
+              onKeyDown={(e) => handleKeyDown(e, "address_proof_submitted")}
+              role="checkbox"
+              aria-checked={formData.documents.address_proof_submitted}
+              tabIndex={0}
+            >
+              <input
+                type="checkbox"
+                className="doc-checkbox"
+                checked={formData.documents.address_proof_submitted}
+                onChange={() => {}}
+                tabIndex={-1}
+                aria-hidden="true"
+              />
+              <div>
+                <div className="doc-title">Proof of Address</div>
+                <div className="doc-desc">Utility bill or residential agreement</div>
+              </div>
+            </div>
+
+            <div
+              className={`doc-toggle-card ${formData.documents.bank_details_submitted ? "checked" : ""}`}
+              onClick={() => handleDocToggle("bank_details_submitted")}
+              onKeyDown={(e) => handleKeyDown(e, "bank_details_submitted")}
+              role="checkbox"
+              aria-checked={formData.documents.bank_details_submitted}
+              tabIndex={0}
+            >
+              <input
+                type="checkbox"
+                className="doc-checkbox"
+                checked={formData.documents.bank_details_submitted}
+                onChange={() => {}}
+                tabIndex={-1}
+                aria-hidden="true"
+              />
+              <div>
+                <div className="doc-title">Bank Account Details</div>
+                <div className="doc-desc">Routing & account number for payroll</div>
+              </div>
+            </div>
+
+            <div
+              className={`doc-toggle-card ${formData.documents.education_certs_submitted ? "checked" : ""}`}
+              onClick={() => handleDocToggle("education_certs_submitted")}
+              onKeyDown={(e) => handleKeyDown(e, "education_certs_submitted")}
+              role="checkbox"
+              aria-checked={formData.documents.education_certs_submitted}
+              tabIndex={0}
+            >
+              <input
+                type="checkbox"
+                className="doc-checkbox"
+                checked={formData.documents.education_certs_submitted}
+                onChange={() => {}}
+                tabIndex={-1}
+                aria-hidden="true"
+              />
+              <div>
+                <div className="doc-title">Education Certificates</div>
+                <div className="doc-desc">Degree transcripts and credential verification</div>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div className="doc-checklist-grid">
-          <div
-            className={`doc-toggle-card ${formData.documents.id_proof_submitted ? "checked" : ""}`}
-            onClick={() => handleDocToggle("id_proof_submitted")}
-          >
-            <input
-              type="checkbox"
-              className="doc-checkbox"
-              checked={formData.documents.id_proof_submitted}
-              onChange={() => {}}
-            />
-            <div>
-              <div className="doc-title">National ID / Passport</div>
-              <div className="doc-desc">Government-issued identity verification</div>
-            </div>
-          </div>
-
-          <div
-            className={`doc-toggle-card ${formData.documents.address_proof_submitted ? "checked" : ""}`}
-            onClick={() => handleDocToggle("address_proof_submitted")}
-          >
-            <input
-              type="checkbox"
-              className="doc-checkbox"
-              checked={formData.documents.address_proof_submitted}
-              onChange={() => {}}
-            />
-            <div>
-              <div className="doc-title">Proof of Address</div>
-              <div className="doc-desc">Utility bill or residential agreement</div>
-            </div>
-          </div>
-
-          <div
-            className={`doc-toggle-card ${formData.documents.bank_details_submitted ? "checked" : ""}`}
-            onClick={() => handleDocToggle("bank_details_submitted")}
-          >
-            <input
-              type="checkbox"
-              className="doc-checkbox"
-              checked={formData.documents.bank_details_submitted}
-              onChange={() => {}}
-            />
-            <div>
-              <div className="doc-title">Bank Account Details</div>
-              <div className="doc-desc">Routing & account number for payroll</div>
-            </div>
-          </div>
-
-          <div
-            className={`doc-toggle-card ${formData.documents.education_certs_submitted ? "checked" : ""}`}
-            onClick={() => handleDocToggle("education_certs_submitted")}
-          >
-            <input
-              type="checkbox"
-              className="doc-checkbox"
-              checked={formData.documents.education_certs_submitted}
-              onChange={() => {}}
-            />
-            <div>
-              <div className="doc-title">Education Certificates</div>
-              <div className="doc-desc">Degree transcripts and credential verification</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Submit Actions */}
-        <div style={{ marginTop: "2rem", display: "flex", justifyContent: "flex-end" }}>
+        {/* Submit Button */}
+        <div style={{ marginTop: "1.75rem", display: "flex", justifyContent: "flex-end" }}>
           <button
             type="submit"
             className="btn btn-primary"
             disabled={isLoading}
-            style={{ minWidth: "220px" }}
+            style={{ minWidth: "180px" }}
           >
             {isLoading ? (
               <>
-                <span className="spinner" />
-                <span>Initiating Agents...</span>
+                <span className="spinner" aria-hidden="true" />
+                <span>Initiating Pipeline...</span>
               </>
             ) : (
-              <>
-                <span>Launch Onboarding Workflow</span>
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <polygon points="5 3 19 12 5 21 5 3" />
-                </svg>
-              </>
+              "Submit Onboarding"
             )}
           </button>
         </div>

@@ -8,3 +8,4 @@ google-generativeai
 python-dotenv
 email-validator
 mongomock-motor
+sse-starlette

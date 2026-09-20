@@ -16,6 +16,7 @@ Validates the full multi-agent lifecycle:
 
 import sys
 import asyncio
+import time
 import httpx
 from datetime import date
 
@@ -68,9 +69,10 @@ async def run_integration_tests():
             # TEST 3: Submit Employee Onboarding Request
             # -----------------------------------------------------------------
             print("\n[Test 3] Initiate Employee Onboarding (POST /onboarding/)...")
+            test_ts = int(time.time())
             employee_payload = {
                 "employee_name": "Alex Rivera",
-                "email": "alex.rivera@techcorp.io",
+                "email": f"alex.rivera.{test_ts}@techcorp.io",
                 "phone": "+1-555-019-2834",
                 "department": "Engineering",
                 "designation": "Senior Frontend Engineer",
@@ -142,7 +144,7 @@ async def run_integration_tests():
             print(f"  {PASS} Progress: {progress['progress_pct']}% ({progress['completed']}/{progress['total_tasks']} tasks)")
             print("     Agent contributions:")
             for agent, stats in summary_data["agent_contributions"].items():
-                print(f"       - {agent}: {stats.get('completed', 0)} completed, {stats.get('failed', 0)} failed")
+                print(f"       - {agent}: {stats.get('tasks_completed', stats.get('completed', 0))} completed, {stats.get('tasks_failed', stats.get('failed', 0))} failed")
 
             # -----------------------------------------------------------------
             # TEST 7: AI Status Narrative
@@ -162,7 +164,7 @@ async def run_integration_tests():
             print("\n[Test 8] Test Pause & Resume Controls on a second candidate...")
             second_emp = {
                 "employee_name": "Jordan Lee",
-                "email": "jordan.lee@techcorp.io",
+                "email": f"jordan.lee.{test_ts}@techcorp.io",
                 "phone": "+1-555-098-7654",
                 "department": "Finance",
                 "designation": "Financial Analyst",

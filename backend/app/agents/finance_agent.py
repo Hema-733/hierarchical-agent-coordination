@@ -64,17 +64,24 @@ class FinanceAgent(BaseAgent):
         designation = employee.get("designation", "")
         documents = employee.get("documents", {})
 
-        # Validate bank details submitted
-        if not documents.get("bank_details_submitted", False):
+        from app.services.document_service import validate_task_document_requirements
+
+        # Validate bank details requirement
+        is_valid, deficient_docs, error_msg = validate_task_document_requirements("Payroll Setup", documents)
+        if not is_valid:
             return AgentResult(
                 success=False,
-                error="Payroll setup failed: Bank account details have not been submitted by the employee.",
+                error="Bank Account Details are required for Payroll Setup.",
                 data={
+                    "needs_human_review": True,
+                    "missing_documents": ["bank_details"],
+                    "missing_document_labels": ["Bank Account Details"],
+                    "deficient_details": deficient_docs,
+                    "reason": "Bank Account Details are required for Payroll Setup.",
                     "payroll_status": "BLOCKED",
-                    "employee_id": emp_id,
-                    "missing": "bank_details_submitted"
+                    "employee_id": emp_id
                 },
-                metadata={"agent": self.name}
+                metadata={"agent": self.name, "handler": "setup_payroll"}
             )
 
         salary_band = _resolve_salary_band(designation)

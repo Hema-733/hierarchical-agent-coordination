@@ -7,9 +7,10 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any
 from fastapi import HTTPException, status
 from app.models.workflow import WorkflowStatus, WorkflowType, WorkflowResponse
-from app.models.task import TaskResponse
+from app.models.task import TaskResponse, TaskStatus
 from app.db.repositories import workflow_repo, task_repo
 from app.services import task_service
+from app.services.event_broker import event_broker
 
 
 def generate_workflow_id() -> str:
@@ -108,6 +109,13 @@ async def pause_workflow(workflow_id: str, reason: Optional[str] = None) -> Work
 
     task_list = await task_repo.get_tasks_by_workflow(workflow_id)
     print(f"[WorkflowService] Workflow '{workflow_id}' PAUSED. Reason: {pause_reason}")
+    event_broker.publish(
+        workflow_id=workflow_id,
+        event_type="WORKFLOW_PAUSED",
+        message=f"Workflow paused. Reason: {pause_reason}",
+        status="PAUSED",
+        data={"paused_reason": pause_reason},
+    )
     return WorkflowResponse(**updated, tasks=[TaskResponse(**t) for t in task_list])
 
 
@@ -152,5 +160,27 @@ async def resume_workflow(workflow_id: str) -> WorkflowResponse:
     )
 
     task_list = await task_repo.get_tasks_by_workflow(workflow_id)
+    # Unblock any tasks that were PAUSED waiting for human document verification
+    for t in task_list:
+        if t.get("status") == TaskStatus.PAUSED.value:
+            await task_repo.update_task_status(
+                task_id=t["task_id"],
+                status=TaskStatus.READY.value,
+                error_message=None
+            )
+            await task_repo._get_collection().update_one(
+                {"task_id": t["task_id"]},
+                {"$set": {"retry_count": 0}}
+            )
+            t["status"] = TaskStatus.READY.value
+            t["retry_count"] = 0
+            t["error_message"] = None
+
     print(f"[WorkflowService] Workflow '{workflow_id}' RESUMED at {now.isoformat()}")
+    event_broker.publish(
+        workflow_id=workflow_id,
+        event_type="WORKFLOW_RESUMED",
+        message="Workflow resumed by operator. Continuing multi-agent coordination.",
+        status="RUNNING",
+    )
     return WorkflowResponse(**updated, tasks=[TaskResponse(**t) for t in task_list])

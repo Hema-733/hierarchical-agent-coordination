@@ -95,7 +95,6 @@ export default function Dashboard() {
       <div className="dashboard-header-row">
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "6px" }}>
-            <span className="badge badge-primary">Phase 16 • Monitoring</span>
             {autoRefresh && (
               <span className="badge badge-success" style={{ fontSize: "0.7rem" }}>
                 <span className="pulse-active" style={{ width: 6, height: 6 }} />
@@ -103,11 +102,9 @@ export default function Dashboard() {
               </span>
             )}
           </div>
-          <h1>
-            Orchestration <span className="gradient-text">Command Center</span>
-          </h1>
+          <h1>Orchestration Dashboard</h1>
           <p>
-            Monitor hierarchical multi-agent state machines, active DAG workflows, and autonomous task handoffs.
+            Monitor hierarchical multi-agent workflows, active task DAGs, and autonomous handoffs.
           </p>
         </div>
 
@@ -150,27 +147,27 @@ export default function Dashboard() {
 
       {/* Metrics Row */}
       <div className="metrics-grid">
-        <div className="glass-panel metric-card" onClick={() => setActiveFilter("ALL")}>
+        <div className="metric-card" onClick={() => setActiveFilter("ALL")}>
           <div className="metric-label">Total Workflows</div>
           <div className="metric-val">{totalCount}</div>
           <div className="metric-hint">All instantiated DAG pipelines</div>
         </div>
 
-        <div className="glass-panel metric-card" onClick={() => setActiveFilter("RUNNING")}>
+        <div className="metric-card" onClick={() => setActiveFilter("RUNNING")}>
           <div className="metric-label">In Progress</div>
-          <div className="metric-val" style={{ color: "var(--primary)" }}>{runningCount}</div>
+          <div className="metric-val" style={{ color: "var(--accent)" }}>{runningCount}</div>
           <div className="metric-hint">Active multi-agent execution</div>
         </div>
 
-        <div className="glass-panel metric-card" onClick={() => setActiveFilter("PAUSED")}>
+        <div className="metric-card" onClick={() => setActiveFilter("PAUSED")}>
           <div className="metric-label">Paused / Needs Info</div>
-          <div className="metric-val" style={{ color: "var(--warning)" }}>{pausedCount}</div>
+          <div className="metric-val" style={{ color: "var(--status-warning)" }}>{pausedCount}</div>
           <div className="metric-hint">Awaiting documents or input</div>
         </div>
 
-        <div className="glass-panel metric-card" onClick={() => setActiveFilter("COMPLETED")}>
+        <div className="metric-card" onClick={() => setActiveFilter("COMPLETED")}>
           <div className="metric-label">Completed</div>
-          <div className="metric-val" style={{ color: "var(--success)" }}>{completedCount}</div>
+          <div className="metric-val" style={{ color: "var(--status-success)" }}>{completedCount}</div>
           <div className="metric-hint">Successfully provisioned</div>
         </div>
       </div>
@@ -215,7 +212,7 @@ export default function Dashboard() {
           <p>Syncing workflow states from supervisor...</p>
         </div>
       ) : filteredWorkflows.length === 0 ? (
-        <div className="glass-panel empty-workflows-panel">
+        <div className="empty-workflows-panel">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
             <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
             <line x1="8" y1="21" x2="16" y2="21" />

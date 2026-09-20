@@ -8,14 +8,16 @@ export default function WorkflowCard({ workflow }) {
     overall_status,
     employee_id,
     created_at,
-    tasks = [],
+    tasks,
     paused_reason,
   } = workflow;
 
+  const safeTasks = Array.isArray(tasks) ? tasks : [];
+
   // Calculate task completion statistics
-  const totalTasks = tasks.length || 6;
-  const completedTasks = tasks.filter((t) => t.status === "COMPLETED").length;
-  const failedTasks = tasks.filter((t) => t.status === "FAILED").length;
+  const totalTasks = safeTasks.length || 6;
+  const completedTasks = safeTasks.filter((t) => t.status === "COMPLETED").length;
+  const failedTasks = safeTasks.filter((t) => t.status === "FAILED").length;
   const progressPct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
 
   const formattedDate = created_at
@@ -28,7 +30,7 @@ export default function WorkflowCard({ workflow }) {
     : "Recently";
 
   return (
-    <div className="glass-panel workflow-card">
+    <div className="workflow-card">
       <div className="workflow-card-header">
         <div>
           <div className="workflow-card-id">{workflow_id}</div>

@@ -8,7 +8,12 @@ Provides endpoints for:
 
 from typing import List
 from fastapi import APIRouter, status
-from app.models.employee import EmployeeCreate, EmployeeResponse, OnboardingInitiationResponse
+from app.models.employee import (
+    EmployeeCreate,
+    EmployeeResponse,
+    OnboardingInitiationResponse,
+    EmployeeDocumentsUpdateRequest,
+)
 from app.services import onboarding_service
 
 router = APIRouter()
@@ -38,6 +43,20 @@ async def get_employee(employee_id: str):
     Returns the details of a registered employee.
     """
     return await onboarding_service.fetch_employee(employee_id)
+
+
+@router.patch(
+    "/employees/{employee_id}/documents",
+    response_model=EmployeeResponse,
+    summary="Update document verification status for an employee",
+    description="Updates document metadata, approval state, and review notes. Can automatically unblock and resume an associated paused workflow."
+)
+async def update_employee_documents(
+    employee_id: str,
+    payload: EmployeeDocumentsUpdateRequest
+):
+    """Updates document review status and optionally resumes workflow."""
+    return await onboarding_service.update_employee_documents(employee_id, payload)
 
 
 @router.get(
