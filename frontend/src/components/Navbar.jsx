@@ -108,7 +108,7 @@ export default function Navbar({ theme = "light", onToggleTheme }) {
                   <rect x="14" y="14" width="7" height="7" />
                   <rect x="3" y="14" width="7" height="7" />
                 </svg>
-                <span>Dashboard</span>
+                <span>Onboarding Queue</span>
               </NavLink>
             </li>
             <li>

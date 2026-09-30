@@ -31,6 +31,7 @@ class SupervisorAgent(BaseAgent):
             description="Main orchestrator responsible for workflow decomposition, task dispatching, dependency tracking, failure handling, and completion checks."
         )
         self._sub_agents: Dict[str, BaseAgent] = {}
+        self._active_workflows: set[str] = set()
 
     def register_sub_agent(self, agent: BaseAgent) -> None:
         """Registers a specialized sub-agent by its name and ID."""
@@ -112,7 +113,28 @@ class SupervisorAgent(BaseAgent):
 
     async def run_workflow(self, workflow_id: str) -> Dict[str, Any]:
         """
-        Main orchestration loop.
+        Main orchestration entry point.
+        Guarded by self._active_workflows so the same workflow cannot execute concurrently.
+        """
+        if workflow_id in self._active_workflows:
+            print(f"[Supervisor] Workflow '{workflow_id}' is already actively executing. Ignoring duplicate trigger.")
+            wf = await workflow_repo.get_workflow_by_id(workflow_id)
+            return {
+                "workflow_id": workflow_id,
+                "status": wf.get("overall_status", WorkflowStatus.RUNNING.value) if wf else WorkflowStatus.RUNNING.value,
+                "message": "Workflow is already actively executing.",
+                "already_running": True
+            }
+
+        self._active_workflows.add(workflow_id)
+        try:
+            return await self._run_workflow_internal(workflow_id)
+        finally:
+            self._active_workflows.discard(workflow_id)
+
+    async def _run_workflow_internal(self, workflow_id: str) -> Dict[str, Any]:
+        """
+        Internal orchestration loop.
         Executes tasks stage by stage until workflow finishes, pauses, or fails.
         """
         wf = await workflow_repo.get_workflow_by_id(workflow_id)
@@ -161,14 +183,15 @@ class SupervisorAgent(BaseAgent):
             # Re-read workflow status from DB each iteration so that an external
             # POST /pause can cleanly halt execution without data loss.
             fresh_wf = await workflow_repo.get_workflow_by_id(workflow_id)
-            if fresh_wf and fresh_wf.get("overall_status") == WorkflowStatus.PAUSED.value:
-                print(f"[Supervisor] Workflow '{workflow_id}' is PAUSED. Halting execution loop.")
+            if fresh_wf and fresh_wf.get("overall_status") in [WorkflowStatus.PAUSED.value, WorkflowStatus.ACTION_REQUIRED.value]:
+                halt_status = fresh_wf.get("overall_status")
+                print(f"[Supervisor] Workflow '{workflow_id}' is {halt_status}. Halting execution loop.")
                 paused_tasks = await task_repo.get_tasks_by_workflow(workflow_id)
                 paused_completed = [t for t in paused_tasks if t.get("status") == TaskStatus.COMPLETED.value]
                 return {
                     "workflow_id": workflow_id,
-                    "status": WorkflowStatus.PAUSED.value,
-                    "message": "Workflow paused externally. Resume to continue.",
+                    "status": halt_status,
+                    "message": f"Workflow {halt_status.lower()} externally. Resume to continue.",
                     "rounds": iteration - 1,
                     "completed_tasks": len(paused_completed),
                     "total_tasks": len(paused_tasks)
@@ -322,7 +345,7 @@ class SupervisorAgent(BaseAgent):
 
                         await workflow_repo.update_workflow_status(
                             workflow_id=workflow_id,
-                            overall_status=WorkflowStatus.PAUSED.value,
+                            overall_status=WorkflowStatus.ACTION_REQUIRED.value,
                             metadata_patch={
                                 "paused_reason": pause_reason,
                                 "needs_human_review": True,
@@ -343,7 +366,7 @@ class SupervisorAgent(BaseAgent):
                             }
                         )
 
-                        print(f"[Supervisor] Task '{task_name}' requires human review ({pause_reason}). Halting loop and PAUSING workflow '{workflow_id}'.")
+                        print(f"[Supervisor] Task '{task_name}' requires human review ({pause_reason}). Halting loop and marking workflow '{workflow_id}' as ACTION_REQUIRED.")
 
                         event_broker.publish(
                             workflow_id=workflow_id,
@@ -352,7 +375,7 @@ class SupervisorAgent(BaseAgent):
                             task_name=task_name,
                             agent=task.get("agent"),
                             round_num=iteration,
-                            status="PAUSED",
+                            status="ACTION_REQUIRED",
                             message=f"Human review required: {result.error}",
                             data=result.data,
                         )
@@ -360,7 +383,7 @@ class SupervisorAgent(BaseAgent):
                             workflow_id=workflow_id,
                             event_type="WORKFLOW_PAUSED",
                             round_num=iteration,
-                            status="PAUSED",
+                            status="ACTION_REQUIRED",
                             message=f"Workflow paused. Reason: {pause_reason}",
                             data={"paused_reason": pause_reason, "missing_documents": missing_docs, "blocked_task": task_name},
                         )
@@ -369,7 +392,7 @@ class SupervisorAgent(BaseAgent):
                         current_completed = [t for t in current_tasks if t.get("status") == TaskStatus.COMPLETED.value]
                         return {
                             "workflow_id": workflow_id,
-                            "status": WorkflowStatus.PAUSED.value,
+                            "status": WorkflowStatus.ACTION_REQUIRED.value,
                             "message": f"Workflow paused for human document review: {result.error}",
                             "rounds": iteration,
                             "needs_human_review": True,

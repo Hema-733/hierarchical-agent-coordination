@@ -69,6 +69,9 @@ export default function Dashboard() {
   const runningCount = workflows.filter(
     (w) => w.overall_status === "RUNNING" || w.overall_status === "READY"
   ).length;
+  const actionRequiredCount = workflows.filter(
+    (w) => w.overall_status === "ACTION_REQUIRED"
+  ).length;
   const pausedCount = workflows.filter((w) => w.overall_status === "PAUSED").length;
   const completedCount = workflows.filter((w) => w.overall_status === "COMPLETED").length;
   const failedCount = workflows.filter((w) => w.overall_status === "FAILED").length;
@@ -81,10 +84,14 @@ export default function Dashboard() {
       w.overall_status === activeFilter;
 
     const term = searchQuery.toLowerCase().trim();
+    const candidateName = w.employee?.employee_name?.toLowerCase() || "";
+    const department = w.employee?.department?.toLowerCase() || "";
     const matchesSearch =
       !term ||
       w.workflow_id.toLowerCase().includes(term) ||
-      w.employee_id.toLowerCase().includes(term);
+      w.employee_id.toLowerCase().includes(term) ||
+      candidateName.includes(term) ||
+      department.includes(term);
 
     return matchesFilter && matchesSearch;
   });
@@ -101,10 +108,13 @@ export default function Dashboard() {
                 Live Sync (5s)
               </span>
             )}
+            <span className="badge badge-neutral" style={{ fontSize: "0.7rem" }}>
+              Independent Queues Active
+            </span>
           </div>
-          <h1>Orchestration Dashboard</h1>
+          <h1>Onboarding Queue & Operations Dashboard</h1>
           <p>
-            Monitor hierarchical multi-agent workflows, active task DAGs, and autonomous handoffs.
+            Monitor independent candidate workflows. Paused and action-required candidates never block others in the queue.
           </p>
         </div>
 
@@ -148,41 +158,46 @@ export default function Dashboard() {
       {/* Metrics Row */}
       <div className="metrics-grid">
         <div className="metric-card" onClick={() => setActiveFilter("ALL")}>
-          <div className="metric-label">Total Workflows</div>
+          <div className="metric-label">Total in Queue</div>
           <div className="metric-val">{totalCount}</div>
-          <div className="metric-hint">All instantiated DAG pipelines</div>
+          <div className="metric-hint">All instantiated candidate pipelines</div>
+        </div>
+
+        <div className="metric-card" onClick={() => setActiveFilter("ACTION_REQUIRED")}>
+          <div className="metric-label">Action Required</div>
+          <div className="metric-val" style={{ color: "var(--status-warning)" }}>{actionRequiredCount}</div>
+          <div className="metric-hint">Awaiting missing docs / review</div>
         </div>
 
         <div className="metric-card" onClick={() => setActiveFilter("RUNNING")}>
           <div className="metric-label">In Progress</div>
           <div className="metric-val" style={{ color: "var(--accent)" }}>{runningCount}</div>
-          <div className="metric-hint">Active multi-agent execution</div>
-        </div>
-
-        <div className="metric-card" onClick={() => setActiveFilter("PAUSED")}>
-          <div className="metric-label">Paused / Needs Info</div>
-          <div className="metric-val" style={{ color: "var(--status-warning)" }}>{pausedCount}</div>
-          <div className="metric-hint">Awaiting documents or input</div>
+          <div className="metric-hint">Autonomous agent execution</div>
         </div>
 
         <div className="metric-card" onClick={() => setActiveFilter("COMPLETED")}>
           <div className="metric-label">Completed</div>
           <div className="metric-val" style={{ color: "var(--status-success)" }}>{completedCount}</div>
-          <div className="metric-hint">Successfully provisioned</div>
+          <div className="metric-hint">Fully onboarded & provisioned</div>
         </div>
       </div>
 
       {/* Controls Bar: Search & Status Filters */}
       <div className="dashboard-controls-bar">
         <div className="filter-tabs">
-          {["ALL", "RUNNING", "PAUSED", "COMPLETED", "FAILED"].map((tab) => (
+          {["ALL", "ACTION_REQUIRED", "RUNNING", "PAUSED", "COMPLETED", "FAILED"].map((tab) => (
             <button
               key={tab}
               type="button"
               className={`filter-tab ${activeFilter === tab ? "active" : ""}`}
               onClick={() => setActiveFilter(tab)}
             >
-              {tab}
+              {tab === "ACTION_REQUIRED" ? "ACTION REQUIRED" : tab}
+              {tab === "ACTION_REQUIRED" && actionRequiredCount > 0 && (
+                <span className="tab-pill-alert" style={{ backgroundColor: "var(--status-warning)", color: "#fff" }}>
+                  {actionRequiredCount}
+                </span>
+              )}
               {tab === "FAILED" && failedCount > 0 && (
                 <span className="tab-pill-alert">{failedCount}</span>
               )}
@@ -198,7 +213,7 @@ export default function Dashboard() {
           <input
             type="text"
             className="search-input"
-            placeholder="Search by Workflow or Candidate ID..."
+            placeholder="Search by Candidate Name, Role, or ID..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />

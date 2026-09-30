@@ -15,6 +15,7 @@ class WorkflowStatus(str, Enum):
     PENDING = "PENDING"
     RUNNING = "RUNNING"
     PAUSED = "PAUSED"
+    ACTION_REQUIRED = "ACTION_REQUIRED"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
 
@@ -45,3 +46,4 @@ class WorkflowInDB(WorkflowBase):
 
 class WorkflowResponse(WorkflowInDB):
     tasks: Optional[List[TaskResponse]] = Field(default=None, description="Optional embedded task list")
+    employee: Optional[Dict[str, Any]] = Field(default=None, description="Optional embedded employee details for queue displays")

@@ -712,17 +712,54 @@
   gap: 10px;
 }
 
+.workflow-card-action-required {
+  border-color: var(--status-warning-border);
+  box-shadow: 0 0 0 1px var(--status-warning-border), var(--shadow-sm);
+}
+
+.workflow-candidate-name {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
 .workflow-card-id {
   font-family: var(--font-mono);
-  font-size: 0.95rem;
+  font-size: 0.85rem;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--text-secondary);
 }
 
 .workflow-card-sub {
   font-size: 0.775rem;
   color: var(--text-muted);
-  margin-top: 1px;
+  margin-top: 2px;
+}
+
+.card-action-required-notice {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.775rem;
+  color: var(--status-warning);
+  background-color: var(--status-warning-bg);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--status-warning-border);
+}
+
+.card-action-required-notice .action-notice-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.card-action-required-notice .action-notice-body {
+  font-size: 0.725rem;
+  opacity: 0.9;
+  padding-left: 21px;
 }
 
 .card-paused-notice {
@@ -735,6 +772,10 @@
   padding: 4px 8px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--status-warning-border);
+}
+
+.progress-fill.is-action-required {
+  background-color: var(--status-warning);
 }
 
 .workflow-progress-section {

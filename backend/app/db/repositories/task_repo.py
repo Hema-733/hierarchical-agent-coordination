@@ -12,6 +12,18 @@ def _get_collection():
     return db["tasks"]
 
 
+async def ensure_task_indexes() -> None:
+    """Creates indexes on the tasks collection for fast lookups and duplication prevention."""
+    collection = _get_collection()
+    try:
+        await collection.create_index("task_id", unique=True)
+        await collection.create_index("workflow_id")
+        await collection.create_index([("workflow_id", 1), ("task_name", 1)], unique=True)
+        await collection.create_index("status")
+    except Exception as e:
+        print(f"[TaskRepo] Note on index creation: {e}")
+
+
 async def create_tasks_batch(task_docs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Inserts multiple task records for a workflow."""
     if not task_docs:

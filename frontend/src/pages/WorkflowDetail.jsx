@@ -1,6 +1,6 @@
 // src/pages/WorkflowDetail.jsx — Deep inspection of workflow DAG, agent task states, AI summary, and controls
 import { useState, useEffect, useCallback } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useSearchParams } from "react-router-dom";
 import {
   getWorkflowById,
   executeWorkflow,
@@ -19,6 +19,8 @@ import DocumentReviewPanel from "../components/DocumentReviewPanel";
 
 export default function WorkflowDetail() {
   const { id: workflowId } = useParams();
+  const [searchParams] = useSearchParams();
+  const initialTab = searchParams.get("tab") || "TASKS";
 
   const [workflow, setWorkflow] = useState(null);
   const [employee, setEmployee] = useState(null);
@@ -27,7 +29,14 @@ export default function WorkflowDetail() {
   const [isLoading, setIsLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
-  const [activeTab, setActiveTab] = useState("TASKS"); // 'TASKS', 'DOCUMENTS', or 'LOGS'
+  const [activeTab, setActiveTab] = useState(initialTab); // 'TASKS', 'DOCUMENTS', or 'LOGS'
+
+  useEffect(() => {
+    const tabParam = searchParams.get("tab");
+    if (tabParam && ["TASKS", "DOCUMENTS", "LOGS"].includes(tabParam)) {
+      setActiveTab(tabParam);
+    }
+  }, [searchParams]);
 
   // ── Real-time SSE stream ──
   const { events: sseEvents, connectionStatus } = useWorkflowStream(workflowId, !!workflowId);
@@ -223,21 +232,31 @@ export default function WorkflowDetail() {
     (d) => d && (d.status === "MISSING" || d.status === "REJECTED" || d.status === "UNDER_REVIEW")
   ).length;
 
-  const isWorkflowPaused = workflow?.overall_status === "PAUSED";
+  const isWorkflowActionRequired = workflow?.overall_status === "ACTION_REQUIRED";
+  const isWorkflowPaused = workflow?.overall_status === "PAUSED" || isWorkflowActionRequired;
 
   return (
     <div className="workflow-detail-page">
-      {/* Navigation Breadcrumb */}
-      <div className="detail-breadcrumb">
-        <Link to="/" className="breadcrumb-link">
+      {/* Navigation Breadcrumb & Back to Queue */}
+      <div className="detail-breadcrumb" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", marginBottom: "1rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <Link to="/" className="breadcrumb-link">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="19" y1="12" x2="5" y2="12" />
+              <polyline points="12 19 5 12 12 5" />
+            </svg>
+            <span>Onboarding Queue</span>
+          </Link>
+          <span className="breadcrumb-sep">/</span>
+          <span className="breadcrumb-curr">{workflowId}</span>
+        </div>
+        <Link to="/" className="btn btn-secondary btn-sm" style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <line x1="19" y1="12" x2="5" y2="12" />
             <polyline points="12 19 5 12 12 5" />
           </svg>
-          <span>Dashboard</span>
+          <span>Return to Queue</span>
         </Link>
-        <span className="breadcrumb-sep">/</span>
-        <span className="breadcrumb-curr">{workflowId}</span>
       </div>
 
       {errorMsg && (
@@ -251,9 +270,9 @@ export default function WorkflowDetail() {
         </div>
       )}
 
-      {/* Human-in-the-Loop Action Required Banner */}
+      {/* Human-in-the-Loop / Action Required Banner */}
       {isWorkflowPaused && (
-        <div className="hitl-action-banner">
+        <div className={`hitl-action-banner ${isWorkflowActionRequired ? "banner-action-required" : ""}`}>
           <div className="hitl-action-left">
             <svg className="hitl-action-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
@@ -261,9 +280,13 @@ export default function WorkflowDetail() {
               <line x1="12" y1="17" x2="12.01" y2="17" />
             </svg>
             <div>
-              <div className="hitl-action-title">Action Required: Human-in-the-Loop Review Needed</div>
+              <div className="hitl-action-title">
+                {isWorkflowActionRequired
+                  ? "Action Required: Missing Documents / Human Review Needed"
+                  : "Workflow Paused: Operator Attention Required"}
+              </div>
               <div className="hitl-action-desc">
-                {workflow?.paused_reason || workflow?.error_message || "Workflow coordination is paused awaiting manual document verification or review."}
+                {workflow?.paused_reason || workflow?.error_message || "Workflow coordination is paused awaiting document verification."}
               </div>
             </div>
           </div>
@@ -295,9 +318,17 @@ export default function WorkflowDetail() {
               <TaskStatusBadge status={workflow?.overall_status} />
               <span className="badge badge-neutral">Pipeline</span>
             </div>
-            <h1>{workflowId}</h1>
+            <h1>{employee?.employee_name || workflowId}</h1>
             <div className="detail-meta-text">
-              <span>Candidate: <strong>{workflow?.employee_id}</strong></span>
+              <span>Workflow ID: <code style={{ fontFamily: "var(--font-mono)" }}>{workflowId}</code></span>
+              <span>•</span>
+              <span>Candidate ID: <strong>{workflow?.employee_id}</strong></span>
+              {employee?.department && (
+                <>
+                  <span>•</span>
+                  <span>{employee.department} {employee.designation ? `— ${employee.designation}` : ""}</span>
+                </>
+              )}
               <span>•</span>
               <span>
                 Created: {workflow?.created_at ? new Date(workflow.created_at).toLocaleDateString(undefined, {
@@ -312,7 +343,7 @@ export default function WorkflowDetail() {
 
           {/* Supervisor Action Controls */}
           <div className="detail-controls-group">
-            {workflow?.overall_status === "PAUSED" ? (
+            {workflow?.overall_status === "PAUSED" || workflow?.overall_status === "ACTION_REQUIRED" ? (
               <button
                 type="button"
                 className="btn btn-primary"

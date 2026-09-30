@@ -193,6 +193,13 @@ export default function OnboardingForm() {
           >
             Onboard Another Employee
           </button>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => navigate("/")}
+          >
+            ← Return to Onboarding Queue
+          </button>
         </div>
       </div>
     );

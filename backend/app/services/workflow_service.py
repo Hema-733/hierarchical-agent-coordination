@@ -38,7 +38,7 @@ async def create_onboarding_workflow(employee_id: str) -> WorkflowResponse:
 
 
 async def get_workflow_details(workflow_id: str, include_tasks: bool = True) -> WorkflowResponse:
-    """Retrieves full workflow details including associated tasks."""
+    """Retrieves full workflow details including associated tasks and employee info."""
     wf = await workflow_repo.get_workflow_by_id(workflow_id)
     if not wf:
         raise HTTPException(
@@ -51,7 +51,12 @@ async def get_workflow_details(workflow_id: str, include_tasks: bool = True) -> 
         task_list = await task_repo.get_tasks_by_workflow(workflow_id)
         tasks = [TaskResponse(**t) for t in task_list]
 
-    return WorkflowResponse(**wf, tasks=tasks)
+    from app.db.repositories import employee_repo
+    employee = None
+    if wf.get("employee_id"):
+        employee = await employee_repo.get_employee_by_id(wf["employee_id"])
+
+    return WorkflowResponse(**wf, tasks=tasks, employee=employee)
 
 
 async def list_workflows(
@@ -59,9 +64,19 @@ async def list_workflows(
     limit: int = 50,
     status_filter: Optional[str] = None
 ) -> List[WorkflowResponse]:
-    """Lists workflows with optional status filtering."""
+    """Lists workflows with optional status filtering and enriched candidate data for the queue."""
+    from app.db.repositories import employee_repo
     wf_list = await workflow_repo.list_workflows(skip=skip, limit=limit, status=status_filter)
-    return [WorkflowResponse(**wf) for wf in wf_list]
+    results = []
+    for wf in wf_list:
+        emp_id = wf.get("employee_id")
+        emp = None
+        if emp_id:
+            emp = await employee_repo.get_employee_by_id(emp_id)
+        task_list = await task_repo.get_tasks_by_workflow(wf["workflow_id"])
+        tasks = [TaskResponse(**t) for t in task_list]
+        results.append(WorkflowResponse(**wf, tasks=tasks, employee=emp))
+    return results
 
 
 async def pause_workflow(workflow_id: str, reason: Optional[str] = None) -> WorkflowResponse:
@@ -79,12 +94,16 @@ async def pause_workflow(workflow_id: str, reason: Optional[str] = None) -> Work
             detail=f"Workflow '{workflow_id}' not found."
         )
 
-    allowed_to_pause = {WorkflowStatus.RUNNING.value, WorkflowStatus.PENDING.value}
+    allowed_to_pause = {
+        WorkflowStatus.RUNNING.value,
+        WorkflowStatus.PENDING.value,
+        WorkflowStatus.ACTION_REQUIRED.value
+    }
     if wf["overall_status"] not in allowed_to_pause:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
-                f"Only RUNNING or PENDING workflows can be paused. "
+                f"Only RUNNING, PENDING, or ACTION_REQUIRED workflows can be paused. "
                 f"Current status: {wf['overall_status']}."
             )
         )
@@ -121,7 +140,7 @@ async def pause_workflow(workflow_id: str, reason: Optional[str] = None) -> Work
 
 async def resume_workflow(workflow_id: str) -> WorkflowResponse:
     """
-    Resumes a PAUSED workflow back to RUNNING.
+    Resumes a PAUSED or ACTION_REQUIRED workflow back to RUNNING.
 
     Records resumed_at timestamp and clears the pause reason.
     The Supervisor is then re-invoked externally (from the API layer)
@@ -134,11 +153,15 @@ async def resume_workflow(workflow_id: str) -> WorkflowResponse:
             detail=f"Workflow '{workflow_id}' not found."
         )
 
-    if wf["overall_status"] != WorkflowStatus.PAUSED.value:
+    allowed_to_resume = {
+        WorkflowStatus.PAUSED.value,
+        WorkflowStatus.ACTION_REQUIRED.value
+    }
+    if wf["overall_status"] not in allowed_to_resume:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
-                f"Only PAUSED workflows can be resumed. "
+                f"Only PAUSED or ACTION_REQUIRED workflows can be resumed. "
                 f"Current status is {wf['overall_status']}."
             )
         )

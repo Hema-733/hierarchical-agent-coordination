@@ -36,6 +36,18 @@ async def get_workflows_by_employee_id(employee_id: str) -> List[Dict[str, Any]]
     return await cursor.to_list(length=50)
 
 
+async def ensure_workflow_indexes() -> None:
+    """Creates indexes on the workflows collection for query performance and data integrity."""
+    collection = _get_collection()
+    try:
+        await collection.create_index("workflow_id", unique=True)
+        await collection.create_index("employee_id")
+        await collection.create_index("overall_status")
+        await collection.create_index("created_at")
+    except Exception as e:
+        print(f"[WorkflowRepo] Note on index creation: {e}")
+
+
 async def list_workflows(
     skip: int = 0,
     limit: int = 50,
@@ -45,7 +57,15 @@ async def list_workflows(
     collection = _get_collection()
     query = {}
     if status:
-        query["overall_status"] = status
+        if status == "ACTION_REQUIRED":
+            query = {
+                "$or": [
+                    {"overall_status": "ACTION_REQUIRED"},
+                    {"overall_status": "PAUSED", "metadata.needs_human_review": True}
+                ]
+            }
+        else:
+            query["overall_status"] = status
     cursor = collection.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit)
     return await cursor.to_list(length=limit)
 

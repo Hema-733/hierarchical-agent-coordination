@@ -149,9 +149,9 @@ async def update_employee_documents(
         # If auto_resume is requested, documents were verified, and none were rejected:
         if update_req.auto_resume and verified_docs and not rejected_docs:
             wf = await workflow_repo.get_workflow_by_id(wf_id)
-            if wf and wf.get("overall_status") == "PAUSED":
+            if wf and wf.get("overall_status") in ["PAUSED", "ACTION_REQUIRED"]:
                 from app.agents.supervisor_agent import supervisor_agent
-                print(f"[OnboardingService] Verified document for PAUSED workflow '{wf_id}'. Resuming coordination...")
+                print(f"[OnboardingService] Verified document for {wf.get('overall_status')} workflow '{wf_id}'. Resuming coordination...")
                 await workflow_service.resume_workflow(wf_id)
                 await supervisor_agent.run_workflow(wf_id)
 

@@ -27,15 +27,15 @@ router = APIRouter()
     "/",
     response_model=List[WorkflowResponse],
     summary="List all workflows",
-    description="Returns workflows with optional filtering by status (PENDING, RUNNING, PAUSED, COMPLETED, FAILED)."
+    description="Returns workflows with optional filtering by status (PENDING, RUNNING, PAUSED, ACTION_REQUIRED, COMPLETED, FAILED)."
 )
 async def list_workflows(
-    status: Optional[WorkflowStatus] = Query(None, description="Filter workflows by overall status"),
+    status: Optional[str] = Query(None, description="Filter workflows by overall status (or ACTION_REQUIRED)"),
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(50, ge=1, le=100, description="Max records to return")
 ):
     """Lists all workflows in the system."""
-    status_str = status.value if status else None
+    status_str = status.strip() if status else None
     return await workflow_service.list_workflows(skip=skip, limit=limit, status_filter=status_str)
 
 

@@ -15,6 +15,10 @@ from app.config import settings
 from app.db.connection import connect_to_mongo, close_mongo_connection
 from app.db.seed import seed_agents
 
+from app.db.repositories.workflow_repo import ensure_workflow_indexes
+from app.db.repositories.task_repo import ensure_task_indexes
+from app.db.repositories.employee_repo import ensure_employee_indexes
+
 # Feature Routers
 from app.api.onboarding import router as onboarding_router
 from app.api.workflows import router as workflows_router
@@ -41,6 +45,11 @@ async def lifespan(app: FastAPI):
     print("[App] Starting up...")
     await connect_to_mongo()
     await seed_agents()
+    
+    # Initialize database indexes
+    await ensure_workflow_indexes()
+    await ensure_task_indexes()
+    await ensure_employee_indexes()
     
     # Register all specialized sub-agents with the Supervisor
     supervisor_agent.register_sub_agent(hr_agent)

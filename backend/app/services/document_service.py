@@ -32,7 +32,7 @@ DOCUMENT_DEFINITIONS = {
     "bank_details": {
         "key": "bank_details",
         "label": "Bank Account Details",
-        "required_for_task": "Payroll Setup",
+        "required_for_task": ["Document Verification", "Payroll Setup"],
         "agent": "Finance Agent",
         "mandatory": True,
         "description": "Direct deposit account and routing details for compensation",
@@ -87,7 +87,9 @@ def validate_task_document_requirements(
     deficient: List[Dict[str, Any]] = []
 
     for key, spec in DOCUMENT_DEFINITIONS.items():
-        if spec["required_for_task"] != task_name or not spec["mandatory"]:
+        spec_tasks = spec["required_for_task"]
+        matches = task_name in spec_tasks if isinstance(spec_tasks, list) else spec_tasks == task_name
+        if not matches or not spec["mandatory"]:
             continue
 
         doc = documents.get(key)

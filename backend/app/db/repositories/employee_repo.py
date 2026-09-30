@@ -15,6 +15,17 @@ def _get_collection():
     return db["employees"]
 
 
+async def ensure_employee_indexes() -> None:
+    """Creates indexes on the employees collection for fast lookups and unique email/employee_id."""
+    collection = _get_collection()
+    try:
+        await collection.create_index("employee_id", unique=True)
+        await collection.create_index("email", unique=True)
+        await collection.create_index("created_at")
+    except Exception as e:
+        print(f"[EmployeeRepo] Note on index creation: {e}")
+
+
 async def create_employee(employee_doc: Dict[str, Any]) -> Dict[str, Any]:
     """
     Inserts a new employee document into MongoDB.
